@@ -1,0 +1,100 @@
+@import "tailwindcss";
+
+:root {
+  /* Warm, trustworthy palette for a small-business tool */
+  --color-cream: #fbf6ef;
+  --color-cream-dark: #f3ead9;
+  --color-card: #ffffff;
+  --color-ink: #2b2118;
+  --color-ink-soft: #6b5d4f;
+  --color-border: #e7dcc9;
+
+  --color-primary: #d9622b;
+  --color-primary-dark: #b94e1e;
+  --color-primary-light: #fdece0;
+
+  --color-success: #2f855a;
+  --color-success-bg: #e7f5ec;
+  --color-warning: #b9781a;
+  --color-warning-bg: #fbf0da;
+  --color-danger: #c0392b;
+  --color-danger-bg: #fbe4e0;
+  --color-info: #2c6e8c;
+  --color-info-bg: #e3f0f5;
+  --color-neutral-bg: #f1ece3;
+}
+
+@theme inline {
+  --color-cream: var(--color-cream);
+  --color-cream-dark: var(--color-cream-dark);
+  --color-card: var(--color-card);
+  --color-ink: var(--color-ink);
+  --color-ink-soft: var(--color-ink-soft);
+  --color-border: var(--color-border);
+  --color-primary: var(--color-primary);
+  --color-primary-dark: var(--color-primary-dark);
+  --color-primary-light: var(--color-primary-light);
+  --color-success: var(--color-success);
+  --color-success-bg: var(--color-success-bg);
+  --color-warning: var(--color-warning);
+  --color-warning-bg: var(--color-warning-bg);
+  --color-danger: var(--color-danger);
+  --color-danger-bg: var(--color-danger-bg);
+  --color-info: var(--color-info);
+  --color-info-bg: var(--color-info-bg);
+  --color-neutral-bg: var(--color-neutral-bg);
+}
+
+body {
+  background: var(--color-cream);
+  color: var(--color-ink);
+}
+
+/* Badges */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.65rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+.badge-dot {
+  width: 0.4rem;
+  height: 0.4rem;
+  border-radius: 999px;
+  background: currentColor;
+  flex-shrink: 0;
+}
+.badge-success {
+  background: var(--color-success-bg);
+  color: var(--color-success);
+}
+.badge-warning {
+  background: var(--color-warning-bg);
+  color: var(--color-warning);
+}
+.badge-danger {
+  background: var(--color-danger-bg);
+  color: var(--color-danger);
+}
+.badge-info {
+  background: var(--color-info-bg);
+  color: var(--color-info);
+}
+.badge-neutral {
+  background: var(--color-neutral-bg);
+  color: var(--color-ink-soft);
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+}
