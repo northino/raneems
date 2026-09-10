@@ -1,11 +1,13 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { listBatches, listOrders } from "@/lib/api";
+import { Trash2 } from "lucide-react";
+import { deleteAbandonedOrders, listBatches, listOrders } from "@/lib/api";
 import { Batch, DispatchStatus, Order } from "@/lib/types";
 import { OrderCard } from "@/components/OrderCard";
 import { Card } from "@/components/Card";
+import { useToast } from "@/lib/toast-context";
 
 const DISPATCH_OPTIONS: { value: DispatchStatus; label: string }[] = [
   { value: "awaiting_item_payment", label: "Awaiting item payment" },
@@ -25,9 +27,11 @@ export default function OrdersPage() {
 
 function OrdersPageInner() {
   const searchParams = useSearchParams();
+  const toast = useToast();
   const [batches, setBatches] = useState<Batch[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const [cleaning, setCleaning] = useState(false);
 
   const [batchId, setBatchId] = useState(searchParams.get("batchId") ?? "");
   const [itemPaid, setItemPaid] = useState(searchParams.get("itemPaid") ?? "");
@@ -38,9 +42,9 @@ function OrdersPageInner() {
     listBatches().then(setBatches);
   }, []);
 
-  useEffect(() => {
+  const load = useCallback(() => {
     setLoading(true);
-    listOrders({
+    return listOrders({
       batchId: batchId || undefined,
       itemPaid: itemPaid ? itemPaid === "true" : undefined,
       shippingPaid: shippingPaid ? shippingPaid === "true" : undefined,
@@ -51,6 +55,28 @@ function OrdersPageInner() {
     });
   }, [batchId, itemPaid, shippingPaid, dispatchStatus]);
 
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  async function handleCleanup() {
+    setCleaning(true);
+    try {
+      const removed = await deleteAbandonedOrders(60);
+      toast.success(
+        removed > 0
+          ? `Removed ${removed} abandoned ${removed === 1 ? "order" : "orders"}`
+          : "No abandoned orders to remove",
+      );
+      await load();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Cleanup failed.");
+    } finally {
+      setCleaning(false);
+    }
+  }
+
+  const viewingUnconfirmed = dispatchStatus === "awaiting_item_payment";
   const hasFilters = batchId || itemPaid || shippingPaid || dispatchStatus;
 
   return (
@@ -100,6 +126,24 @@ function OrdersPageInner() {
           </button>
         )}
       </Card>
+
+      {viewingUnconfirmed && (
+        <Card className="p-4 flex items-start justify-between gap-3 bg-warning-bg border-none">
+          <p className="text-sm text-ink">
+            These are unconfirmed checkout attempts — orders where the customer
+            started but never completed the item payment. Clear out old ones to
+            keep things tidy.
+          </p>
+          <button
+            onClick={handleCleanup}
+            disabled={cleaning}
+            className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-ink hover:bg-cream-dark disabled:opacity-50"
+          >
+            <Trash2 size={16} />
+            {cleaning ? "Cleaning…" : "Clean up (1h+)"}
+          </button>
+        </Card>
+      )}
 
       {loading ? (
         <p className="text-ink-soft text-sm">Loading orders…</p>

@@ -2,7 +2,14 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { LayoutDashboard, Package, ClipboardList, Truck, LogOut } from "lucide-react";
+import {
+  LayoutDashboard,
+  Package,
+  ClipboardList,
+  Truck,
+  Users,
+  LogOut,
+} from "lucide-react";
 import { logout } from "@/lib/api";
 
 const NAV_ITEMS = [
@@ -10,6 +17,7 @@ const NAV_ITEMS = [
   { href: "/batches", label: "Batches", icon: Package },
   { href: "/orders", label: "Orders", icon: ClipboardList },
   { href: "/dispatch", label: "Dispatch", icon: Truck },
+  { href: "/admin/users", label: "Team", icon: Users },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -65,7 +73,7 @@ export function DashboardNav() {
 
       {/* Mobile bottom tab bar */}
       <nav className="no-print md:hidden fixed bottom-0 left-0 right-0 z-20 bg-card border-t border-border pb-[env(safe-area-inset-bottom)]">
-        <div className="grid grid-cols-4">
+        <div className="grid grid-cols-5">
           {NAV_ITEMS.map(({ href, label, icon: Icon }) => {
             const active = isActive(pathname, href);
             return (

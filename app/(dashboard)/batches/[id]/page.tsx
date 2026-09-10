@@ -87,7 +87,14 @@ export default function BatchDetailPage() {
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           {products.map((product) => (
-            <ProductCard key={product.id} product={product} />
+            <ProductCard
+              key={product.id}
+              product={product}
+              batchId={batch.id}
+              onDeleted={(id) =>
+                setProducts((prev) => prev.filter((p) => p.id !== id))
+              }
+            />
           ))}
         </div>
       )}

@@ -14,7 +14,6 @@ import {
 import {
   generateShipmentLink,
   getOrder,
-  markShippingPaymentPaid,
   setDispatchStatus,
   setShippingCost,
 } from "@/lib/api";
@@ -84,15 +83,6 @@ export default function OrderDetailPage() {
       Number(shippingAmount),
     )}): ${shipmentLink}`;
     window.open(buildWhatsAppLink(order.customerPhone, message), "_blank");
-  }
-
-  async function handleMockShippingPaid() {
-    if (!order) return;
-    setBusy(true);
-    // Demo-only: stands in for the real Paystack webhook.
-    const updated = await markShippingPaymentPaid(order.id);
-    if (updated) setOrder(updated);
-    setBusy(false);
   }
 
   async function handleSetDispatch(status: "dispatched" | "delivered") {
@@ -214,19 +204,10 @@ export default function OrderDetailPage() {
               </div>
             )}
 
-            <div className="border-t border-border pt-3 mt-1">
-              <p className="text-xs text-ink-soft mb-2">
-                Demo helper — simulates the customer paying the shipment link (a real backend
-                would confirm this via the Paystack webhook automatically).
-              </p>
-              <button
-                onClick={handleMockShippingPaid}
-                disabled={busy}
-                className="text-sm font-medium text-primary"
-              >
-                Mark shipping payment as received (demo)
-              </button>
-            </div>
+            <p className="text-xs text-ink-soft border-t border-border pt-3 mt-1">
+              Once the customer pays this link, Paystack confirms it
+              automatically and the order moves to “ready to dispatch”.
+            </p>
           </div>
         ) : (
           <p className="text-sm text-ink-soft mt-2">

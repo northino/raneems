@@ -1,19 +1,16 @@
 // ---------------------------------------------------------------------------
-// SINGLE API LAYER
+// SINGLE API LAYER  (Supabase-backed)
 // ---------------------------------------------------------------------------
-// Every piece of data the UI reads or writes goes through a named function
-// in this file. Right now each function reads/writes localStorage as a
-// stand-in "database" and resolves after a short artificial delay so the
-// UI's loading states behave like they will against a real network call.
+// Every piece of data the UI reads or writes goes through a named function in
+// this file. Each one talks to Supabase (Postgres + Auth + Storage) and maps
+// the snake_case DB rows to the camelCase shapes in lib/types.ts. Nothing
+// outside this file touches Supabase directly, so components stay unchanged.
 //
-// To wire up a real backend: replace the body of each function with a
-// `fetch(...)` call (or your API client of choice) that returns the same
-// shape. Nothing outside this file talks to localStorage directly, so no
-// component or page needs to change.
+// The DB schema this expects lives in supabase/schema.sql.
 // ---------------------------------------------------------------------------
 
-import { seedBatches, seedOrders, seedProducts } from "./mock-data";
-import { readCollection, readFlag, writeCollection, writeFlag } from "./storage";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import { createClient } from "./supabase/client";
 import {
   Batch,
   DispatchStatus,
@@ -23,36 +20,107 @@ import {
   ProductAttribute,
 } from "./types";
 
-const BATCHES_KEY = "batches";
-const PRODUCTS_KEY = "products";
-const ORDERS_KEY = "orders";
-const AUTH_KEY = "auth";
-
-function delay<T>(value: T, ms = 350): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
+// Lazily create the browser client on first use. Creating it at module load
+// would throw during static prerender (when env vars aren't inlined yet) and
+// break `next build`. This defers creation to actual (client-side) calls.
+let _supabase: SupabaseClient | null = null;
+function db(): SupabaseClient {
+  if (!_supabase) _supabase = createClient();
+  return _supabase;
 }
 
-function getBatches(): Batch[] {
-  return readCollection<Batch>(BATCHES_KEY, seedBatches);
-}
-function setBatches(batches: Batch[]) {
-  writeCollection(BATCHES_KEY, batches);
-}
-function getProducts(): Product[] {
-  return readCollection<Product>(PRODUCTS_KEY, seedProducts);
-}
-function setProducts(products: Product[]) {
-  writeCollection(PRODUCTS_KEY, products);
-}
-function getOrders(): Order[] {
-  return readCollection<Order>(ORDERS_KEY, seedOrders);
-}
-function setOrders(orders: Order[]) {
-  writeCollection(ORDERS_KEY, orders);
+const PRODUCT_IMAGE_BUCKET = "product-images";
+
+// ---------------------------------------------------------------------------
+// Row types (shape returned by Supabase) + mappers to app types
+// ---------------------------------------------------------------------------
+
+interface BatchRow {
+  id: string;
+  name: string;
+  status: Batch["status"];
+  created_at: string;
 }
 
-function randomId(prefix: string): string {
-  return `${prefix}-${Math.random().toString(36).slice(2, 9)}`;
+interface ProductRow {
+  id: string;
+  batch_id: string;
+  name: string;
+  description: string;
+  attributes: ProductAttribute[];
+  price: number;
+  image_url: string;
+  public_slug: string;
+}
+
+interface OrderRow {
+  id: string;
+  order_reference: string;
+  batch_id: string;
+  product_id: string;
+  product_name: string;
+  quantity: number;
+  customer_name: string;
+  customer_phone: string;
+  customer_email: string;
+  delivery_address: string;
+  item_paid: boolean;
+  item_amount: number | null;
+  item_paid_at: string | null;
+  shipping_paid: boolean;
+  shipping_amount: number | null;
+  shipping_paid_at: string | null;
+  dispatch_status: DispatchStatus;
+  created_at: string;
+}
+
+function mapBatch(row: BatchRow): Batch {
+  return {
+    id: row.id,
+    name: row.name,
+    createdAt: row.created_at,
+    status: row.status,
+  };
+}
+
+function mapProduct(row: ProductRow): Product {
+  return {
+    id: row.id,
+    batchId: row.batch_id,
+    name: row.name,
+    description: row.description,
+    attributes: row.attributes ?? [],
+    price: row.price,
+    imageUrl: row.image_url,
+    publicSlug: row.public_slug,
+  };
+}
+
+function mapOrder(row: OrderRow): Order {
+  return {
+    id: row.id,
+    orderReference: row.order_reference,
+    batchId: row.batch_id,
+    productId: row.product_id,
+    productName: row.product_name,
+    quantity: row.quantity,
+    customerName: row.customer_name,
+    customerPhone: row.customer_phone,
+    customerEmail: row.customer_email,
+    deliveryAddress: row.delivery_address,
+    itemPayment: {
+      paid: row.item_paid,
+      amount: row.item_amount,
+      paidAt: row.item_paid_at,
+    },
+    shippingPayment: {
+      paid: row.shipping_paid,
+      amount: row.shipping_amount,
+      paidAt: row.shipping_paid_at,
+    },
+    dispatchStatus: row.dispatch_status,
+    createdAt: row.created_at,
+  };
 }
 
 function slugify(name: string): string {
@@ -69,98 +137,126 @@ function slugify(name: string): string {
 // Auth
 // ---------------------------------------------------------------------------
 
-/**
- * TODO: replace with a real API call (e.g. POST /api/auth/login) that
- * verifies credentials and returns a session token / cookie.
- */
+/** Signs in with email + password against Supabase Auth. */
 export async function login(
   email: string,
   password: string,
 ): Promise<{ ok: boolean; message?: string }> {
   if (!email || !password) {
-    return delay({ ok: false, message: "Email and password are required." });
+    return { ok: false, message: "Email and password are required." };
   }
-  writeFlag(AUTH_KEY, true);
-  return delay({ ok: true });
+  const { error } = await db().auth.signInWithPassword({ email, password });
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+  return { ok: true };
 }
 
-/** TODO: replace with a real API call that invalidates the session. */
+/** Ends the Supabase session. */
 export async function logout(): Promise<void> {
-  writeFlag(AUTH_KEY, false);
-  return delay(undefined, 100);
+  await db().auth.signOut();
 }
 
-/** Synchronous on purpose — used by route guards before first paint. */
-export function isAuthenticated(): boolean {
-  return readFlag(AUTH_KEY);
+/**
+ * Async session check — resolves whether a user is currently signed in.
+ * Route guards should prefer the useAuth() hook from lib/auth-context.
+ */
+export async function getCurrentUser() {
+  const { data } = await db().auth.getUser();
+  return data.user;
 }
 
 // ---------------------------------------------------------------------------
 // Batches
 // ---------------------------------------------------------------------------
 
-/** TODO: replace with GET /api/batches */
 export async function listBatches(): Promise<Batch[]> {
-  const batches = [...getBatches()].sort((a, b) =>
-    b.createdAt.localeCompare(a.createdAt),
-  );
-  return delay(batches);
+  const { data, error } = await db()
+    .from("batches")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data as BatchRow[]).map(mapBatch);
 }
 
-/** TODO: replace with GET /api/batches/:id */
 export async function getBatch(id: string): Promise<Batch | undefined> {
-  return delay(getBatches().find((b) => b.id === id));
+  const { data, error } = await db()
+    .from("batches")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapBatch(data as BatchRow) : undefined;
 }
 
-/** TODO: replace with POST /api/batches */
 export async function createBatch(name: string): Promise<Batch> {
-  const batch: Batch = {
-    id: randomId("batch"),
-    name,
-    createdAt: new Date().toISOString(),
-    status: "open",
-  };
-  setBatches([batch, ...getBatches()]);
-  return delay(batch);
+  const { data, error } = await db()
+    .from("batches")
+    .insert({ name })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapBatch(data as BatchRow);
 }
 
-/** TODO: replace with PATCH /api/batches/:id */
 export async function setBatchStatus(
   id: string,
   status: Batch["status"],
 ): Promise<Batch | undefined> {
-  const batches = getBatches().map((b) => (b.id === id ? { ...b, status } : b));
-  setBatches(batches);
-  return delay(batches.find((b) => b.id === id));
+  const { data, error } = await db()
+    .from("batches")
+    .update({ status })
+    .eq("id", id)
+    .select("*")
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapBatch(data as BatchRow) : undefined;
 }
 
-/** TODO: replace with GET /api/batches/:id/product-count (or include in batch payload) */
 export async function countProductsInBatch(batchId: string): Promise<number> {
-  return delay(getProducts().filter((p) => p.batchId === batchId).length);
+  const { count, error } = await db()
+    .from("products")
+    .select("*", { count: "exact", head: true })
+    .eq("batch_id", batchId);
+  if (error) throw error;
+  return count ?? 0;
 }
 
 // ---------------------------------------------------------------------------
 // Products
 // ---------------------------------------------------------------------------
 
-/** TODO: replace with GET /api/products?batchId=... */
 export async function listProducts(batchId?: string): Promise<Product[]> {
-  const products = getProducts().filter((p) =>
-    batchId ? p.batchId === batchId : true,
-  );
-  return delay(products);
+  let query = db()
+    .from("products")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (batchId) query = query.eq("batch_id", batchId);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data as ProductRow[]).map(mapProduct);
 }
 
-/** TODO: replace with GET /api/products/:id */
 export async function getProduct(id: string): Promise<Product | undefined> {
-  return delay(getProducts().find((p) => p.id === id));
+  const { data, error } = await db()
+    .from("products")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapProduct(data as ProductRow) : undefined;
 }
 
-/** TODO: replace with GET /api/public/products/:slug (public, unauthenticated) */
 export async function getProductBySlug(
   slug: string,
 ): Promise<Product | undefined> {
-  return delay(getProducts().find((p) => p.publicSlug === slug));
+  const { data, error } = await db()
+    .from("products")
+    .select("*")
+    .eq("public_slug", slug)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapProduct(data as ProductRow) : undefined;
 }
 
 export interface CreateProductInput {
@@ -169,67 +265,205 @@ export interface CreateProductInput {
   description: string;
   attributes: ProductAttribute[];
   price: number;
-  imageUrl: string; // TODO: real backend should accept a File / multipart upload here
+  imageUrl: string;
 }
 
-/** TODO: replace with POST /api/products (multipart if uploading a real image file) */
-export async function createProduct(input: CreateProductInput): Promise<Product> {
-  const product: Product = {
-    id: randomId("prod"),
-    batchId: input.batchId,
-    name: input.name,
-    description: input.description,
-    attributes: input.attributes,
-    price: input.price,
-    imageUrl: input.imageUrl,
-    publicSlug: slugify(input.name),
-  };
-  setProducts([...getProducts(), product]);
-  return delay(product);
+export async function createProduct(
+  input: CreateProductInput,
+): Promise<Product> {
+  const { data, error } = await db()
+    .from("products")
+    .insert({
+      batch_id: input.batchId,
+      name: input.name,
+      description: input.description,
+      attributes: input.attributes,
+      price: input.price,
+      image_url: input.imageUrl,
+      public_slug: slugify(input.name),
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapProduct(data as ProductRow);
+}
+
+/**
+ * Uploads a product image to Supabase Storage and returns its public URL.
+ * Used by the Add Product form in place of the old FileReader data-URL mock.
+ */
+export async function uploadProductImage(file: File): Promise<string> {
+  const ext = file.name.split(".").pop() || "jpg";
+  const path = `${crypto.randomUUID()}.${ext}`;
+  const { error } = await db().storage
+    .from(PRODUCT_IMAGE_BUCKET)
+    .upload(path, file, { cacheControl: "3600", upsert: false });
+  if (error) throw error;
+  const { data } = db().storage
+    .from(PRODUCT_IMAGE_BUCKET)
+    .getPublicUrl(path);
+  return data.publicUrl;
+}
+
+/**
+ * Extracts the in-bucket path from a Supabase Storage public URL, or null if
+ * the URL isn't one of ours (e.g. a placeholder `data:` SVG). Public URLs look
+ * like: https://<ref>.supabase.co/storage/v1/object/public/<bucket>/<path>
+ */
+function storagePathFromPublicUrl(url: string): string | null {
+  if (!url || url.startsWith("data:")) return null;
+  const marker = `/storage/v1/object/public/${PRODUCT_IMAGE_BUCKET}/`;
+  const idx = url.indexOf(marker);
+  if (idx === -1) return null;
+  const path = url.slice(idx + marker.length).split("?")[0];
+  return path ? decodeURIComponent(path) : null;
+}
+
+/**
+ * Removes a product image from Storage. Safe no-op for placeholder/data-URL
+ * images or anything not in our bucket, so callers don't need to check.
+ */
+export async function deleteProductImage(imageUrl: string): Promise<void> {
+  const path = storagePathFromPublicUrl(imageUrl);
+  if (!path) return;
+  const { error } = await db().storage.from(PRODUCT_IMAGE_BUCKET).remove([path]);
+  if (error) throw error;
+}
+
+export interface UpdateProductInput {
+  name: string;
+  description: string;
+  attributes: ProductAttribute[];
+  price: number;
+  /** New hosted image URL. If it differs from the current one, the old image
+   *  is deleted from Storage. Pass the existing URL to keep the current image. */
+  imageUrl: string;
+}
+
+/**
+ * Updates a product. If the image changed, the previous image is removed from
+ * Storage first (so unused files don't pile up), then the new URL is saved.
+ */
+export async function updateProduct(
+  id: string,
+  input: UpdateProductInput,
+): Promise<Product> {
+  // Look up the current image so we can clean it up if it's being replaced.
+  const existing = await getProduct(id);
+
+  const { data, error } = await db()
+    .from("products")
+    .update({
+      name: input.name,
+      description: input.description,
+      attributes: input.attributes,
+      price: input.price,
+      image_url: input.imageUrl,
+    })
+    .eq("id", id)
+    .select("*")
+    .single();
+  if (error) throw error;
+
+  // After the DB update succeeds, delete the old image if it was replaced.
+  if (existing && existing.imageUrl && existing.imageUrl !== input.imageUrl) {
+    await deleteProductImage(existing.imageUrl).catch(() => {
+      // Non-fatal: the product is updated; a stray image is not worth failing.
+    });
+  }
+
+  return mapProduct(data as ProductRow);
+}
+
+/**
+ * Deletes a product and removes its image from Storage.
+ */
+export async function deleteProduct(id: string): Promise<void> {
+  const existing = await getProduct(id);
+
+  const { error } = await db().from("products").delete().eq("id", id);
+  if (error) throw error;
+
+  if (existing?.imageUrl) {
+    await deleteProductImage(existing.imageUrl).catch(() => {
+      // Non-fatal: the row is gone; a leftover image is not worth failing.
+    });
+  }
 }
 
 // ---------------------------------------------------------------------------
 // Orders
 // ---------------------------------------------------------------------------
 
-function nextOrderReference(): string {
-  const count = getOrders().length + 1;
-  return `RNM-${1000 + count}`;
-}
-
-/** TODO: replace with GET /api/orders?batchId=&itemPaid=&shippingPaid=&dispatchStatus= */
 export async function listOrders(filters: OrderFilters = {}): Promise<Order[]> {
-  let orders = [...getOrders()];
-  if (filters.batchId) orders = orders.filter((o) => o.batchId === filters.batchId);
-  if (filters.itemPaid !== undefined)
-    orders = orders.filter((o) => o.itemPayment.paid === filters.itemPaid);
+  let query = db()
+    .from("orders")
+    .select("*")
+    .order("created_at", { ascending: false });
+  if (filters.batchId) query = query.eq("batch_id", filters.batchId);
+  if (filters.itemPaid !== undefined) query = query.eq("item_paid", filters.itemPaid);
   if (filters.shippingPaid !== undefined)
-    orders = orders.filter((o) => o.shippingPayment.paid === filters.shippingPaid);
-  if (filters.dispatchStatus)
-    orders = orders.filter((o) => o.dispatchStatus === filters.dispatchStatus);
-  orders.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-  return delay(orders);
+    query = query.eq("shipping_paid", filters.shippingPaid);
+  if (filters.dispatchStatus) {
+    query = query.eq("dispatch_status", filters.dispatchStatus);
+  } else if (!filters.includeUnconfirmed) {
+    // By default hide unconfirmed checkout attempts (order created but the
+    // item payment never completed — abandoned or failed checkouts). They're
+    // still visible when explicitly filtering by that dispatch status.
+    query = query.neq("dispatch_status", "awaiting_item_payment");
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data as OrderRow[]).map(mapOrder);
 }
 
-/** TODO: replace with GET /api/orders/:id */
 export async function getOrder(id: string): Promise<Order | undefined> {
-  return delay(getOrders().find((o) => o.id === id));
+  const { data, error } = await db()
+    .from("orders")
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapOrder(data as OrderRow) : undefined;
 }
 
 /**
- * Orders ready to hand to a delivery driver: both payments confirmed and
- * not yet delivered.
- * TODO: replace with GET /api/orders?readyToDispatch=true
+ * Orders ready to hand to a delivery driver: both payments confirmed and not
+ * yet delivered.
  */
 export async function listReadyToDispatch(): Promise<Order[]> {
-  const orders = getOrders().filter(
-    (o) =>
-      o.itemPayment.paid &&
-      o.shippingPayment.paid &&
-      o.dispatchStatus !== "delivered",
-  );
-  orders.sort((a, b) => a.createdAt.localeCompare(b.createdAt));
-  return delay(orders);
+  const { data, error } = await db()
+    .from("orders")
+    .select("*")
+    .eq("item_paid", true)
+    .eq("shipping_paid", true)
+    .neq("dispatch_status", "delivered")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data as OrderRow[]).map(mapOrder);
+}
+
+/**
+ * Deletes abandoned checkout attempts: orders still awaiting the item payment
+ * (item never paid) that are older than `olderThanMinutes`. Safe — it only
+ * ever touches unpaid `awaiting_item_payment` rows, never a real/paid order.
+ * Returns the number of orders removed.
+ */
+export async function deleteAbandonedOrders(
+  olderThanMinutes = 60,
+): Promise<number> {
+  const cutoff = new Date(
+    Date.now() - olderThanMinutes * 60_000,
+  ).toISOString();
+  const { data, error } = await db()
+    .from("orders")
+    .delete()
+    .eq("item_paid", false)
+    .eq("dispatch_status", "awaiting_item_payment")
+    .lt("created_at", cutoff)
+    .select("id");
+  if (error) throw error;
+  return data?.length ?? 0;
 }
 
 export interface SubmitOrderInput {
@@ -246,126 +480,97 @@ export interface SubmitOrderInput {
 
 /**
  * Created from the public catalogue page when the customer taps "Pay Now",
- * before payment is confirmed.
- * TODO: replace with POST /api/public/orders (public, unauthenticated)
+ * before payment is confirmed. The order_reference is assigned by a DB trigger.
  */
 export async function submitOrder(input: SubmitOrderInput): Promise<Order> {
-  const order: Order = {
-    id: randomId("order"),
-    orderReference: nextOrderReference(),
-    batchId: input.batchId,
-    productId: input.productId,
-    productName: input.productName,
-    quantity: input.quantity,
-    customerName: input.customerName,
-    customerPhone: input.customerPhone,
-    customerEmail: input.customerEmail,
-    deliveryAddress: input.deliveryAddress,
-    itemPayment: { paid: false, amount: input.itemAmount, paidAt: null },
-    shippingPayment: { paid: false, amount: null, paidAt: null },
-    dispatchStatus: "awaiting_item_payment",
-    createdAt: new Date().toISOString(),
-  };
-  setOrders([...getOrders(), order]);
-  return delay(order);
+  const { data, error } = await db()
+    .from("orders")
+    .insert({
+      batch_id: input.batchId,
+      product_id: input.productId,
+      product_name: input.productName,
+      quantity: input.quantity,
+      customer_name: input.customerName,
+      customer_phone: input.customerPhone,
+      customer_email: input.customerEmail,
+      delivery_address: input.deliveryAddress,
+      item_paid: false,
+      item_amount: input.itemAmount,
+      item_paid_at: null,
+      shipping_paid: false,
+      shipping_amount: null,
+      shipping_paid_at: null,
+      dispatch_status: "awaiting_item_payment",
+    })
+    .select("*")
+    .single();
+  if (error) throw error;
+  return mapOrder(data as OrderRow);
 }
 
 /**
- * Simulates redirecting to Paystack for the item payment.
- * TODO: replace with a real call to initialize a Paystack transaction and
- * return the authorization_url to redirect the customer to.
+ * Initializes a real Paystack transaction for the item payment (via the
+ * server route, which holds the secret key) and returns the hosted checkout
+ * URL. The caller should redirect the browser to `redirectUrl`. Payment is
+ * confirmed asynchronously by the Paystack webhook / callback.
  */
 export async function initiateItemPayment(
   orderId: string,
 ): Promise<{ redirectUrl: string }> {
-  return delay({ redirectUrl: `https://mock-paystack.test/pay/${orderId}` }, 1200);
+  const res = await fetch("/api/payments/initialize", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderId, type: "item" }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "Could not start payment.");
+  return { redirectUrl: json.authorizationUrl as string };
 }
 
-/**
- * Simulates the webhook/callback confirming the item payment succeeded.
- * TODO: replace with the real Paystack webhook handler updating this order,
- * or a verify call the frontend makes after redirect.
- */
-export async function confirmMockItemPayment(orderId: string): Promise<Order | undefined> {
-  const orders = getOrders().map((o) =>
-    o.id === orderId
-      ? {
-          ...o,
-          itemPayment: {
-            paid: true,
-            amount: o.itemPayment.amount,
-            paidAt: new Date().toISOString(),
-          },
-          dispatchStatus: "awaiting_shipping_payment" as DispatchStatus,
-        }
-      : o,
-  );
-  setOrders(orders);
-  return delay(orders.find((o) => o.id === orderId), 800);
-}
-
-/**
- * Owner enters the shipping/import cost for this specific customer.
- * TODO: replace with PATCH /api/orders/:id/shipping-cost
- */
+/** Owner enters the shipping/import cost for this specific customer. */
 export async function setShippingCost(
   orderId: string,
   amount: number,
 ): Promise<Order | undefined> {
-  const orders = getOrders().map((o) =>
-    o.id === orderId
-      ? { ...o, shippingPayment: { ...o.shippingPayment, amount } }
-      : o,
-  );
-  setOrders(orders);
-  return delay(orders.find((o) => o.id === orderId));
+  const { data, error } = await db()
+    .from("orders")
+    .update({ shipping_amount: amount })
+    .eq("id", orderId)
+    .select("*")
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapOrder(data as OrderRow) : undefined;
 }
 
 /**
- * Generates the shipment payment link the owner sends to the customer.
- * TODO: replace with a real call to create a Paystack payment link for the
- * shipping amount and return its URL.
+ * Generates a real Paystack payment link for the shipping cost (via the server
+ * route). The owner sends this link to the customer over WhatsApp. Payment is
+ * confirmed asynchronously by the Paystack webhook / callback.
+ * Call setShippingCost() first so the order has a shipping amount.
  */
 export async function generateShipmentLink(
   orderId: string,
 ): Promise<{ url: string }> {
-  return delay({ url: `https://mock-paystack.test/pay/shipping-${orderId}` });
+  const res = await fetch("/api/payments/initialize", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderId, type: "shipping" }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "Could not create shipment link.");
+  return { url: json.authorizationUrl as string };
 }
 
-/**
- * Demo-only helper standing in for the real Paystack webhook, which would
- * mark shipping as paid automatically once the customer pays the shipment
- * link. Kept here so the full flow can be demonstrated without a backend.
- * TODO: remove once real webhook handling marks shipping payments paid.
- */
-export async function markShippingPaymentPaid(
-  orderId: string,
-): Promise<Order | undefined> {
-  const orders = getOrders().map((o) =>
-    o.id === orderId
-      ? {
-          ...o,
-          shippingPayment: {
-            ...o.shippingPayment,
-            paid: true,
-            paidAt: new Date().toISOString(),
-          },
-          dispatchStatus: "ready_to_dispatch" as DispatchStatus,
-        }
-      : o,
-  );
-  setOrders(orders);
-  return delay(orders.find((o) => o.id === orderId));
-}
-
-/** TODO: replace with PATCH /api/orders/:id/dispatch-status */
 export async function setDispatchStatus(
   orderId: string,
   status: DispatchStatus,
 ): Promise<Order | undefined> {
-  const orders = getOrders().map((o) =>
-    o.id === orderId ? { ...o, dispatchStatus: status } : o,
-  );
-  setOrders(orders);
-  return delay(orders.find((o) => o.id === orderId));
+  const { data, error } = await db()
+    .from("orders")
+    .update({ dispatch_status: status })
+    .eq("id", orderId)
+    .select("*")
+    .maybeSingle();
+  if (error) throw error;
+  return data ? mapOrder(data as OrderRow) : undefined;
 }

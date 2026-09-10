@@ -1,14 +1,49 @@
 "use client";
 
 import { useState } from "react";
-import { Check, ChevronDown, ChevronUp, Copy } from "lucide-react";
+import Link from "next/link";
+import {
+  Check,
+  ChevronDown,
+  ChevronUp,
+  Copy,
+  Pencil,
+  Trash2,
+} from "lucide-react";
 import { Product } from "@/lib/types";
 import { formatNaira } from "@/lib/format";
+import { deleteProduct } from "@/lib/api";
 import { Card } from "@/components/Card";
+import { useToast } from "@/lib/toast-context";
 
-export function ProductCard({ product }: { product: Product }) {
+export function ProductCard({
+  product,
+  batchId,
+  onDeleted,
+}: {
+  product: Product;
+  /** Enables Edit/Delete actions when provided (owner dashboard). */
+  batchId?: string;
+  onDeleted?: (productId: string) => void;
+}) {
+  const toast = useToast();
   const [copied, setCopied] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDelete() {
+    setDeleting(true);
+    try {
+      await deleteProduct(product.id);
+      toast.success("Product deleted");
+      onDeleted?.(product.id);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not delete product.");
+      setDeleting(false);
+      setConfirming(false);
+    }
+  }
 
   function publicUrl() {
     if (typeof window === "undefined") return `/p/${product.publicSlug}`;
@@ -66,6 +101,53 @@ export function ProductCard({ product }: { product: Product }) {
           {previewOpen ? "Hide Preview" : "Preview"}
         </button>
       </div>
+
+      {batchId && (
+        <div className="px-4 pb-4">
+          {confirming ? (
+            <div className="rounded-lg border border-danger/30 bg-danger-bg p-3">
+              <p className="text-sm text-ink font-medium">Delete this product?</p>
+              <p className="text-xs text-ink-soft mt-0.5">
+                This also removes its image and can&apos;t be undone.
+              </p>
+              <div className="grid grid-cols-2 gap-2 mt-3">
+                <button
+                  onClick={() => setConfirming(false)}
+                  disabled={deleting}
+                  className="inline-flex items-center justify-center rounded-lg border border-border bg-white px-3 py-2.5 text-sm font-medium text-ink hover:bg-cream-dark"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDelete}
+                  disabled={deleting}
+                  className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-danger text-white px-3 py-2.5 text-sm font-semibold hover:opacity-90 disabled:opacity-50"
+                >
+                  <Trash2 size={16} />
+                  {deleting ? "Deleting…" : "Delete"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 gap-2">
+              <Link
+                href={`/batches/${batchId}/products/${product.id}/edit`}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-white px-3 py-2.5 text-sm font-medium text-ink hover:bg-cream-dark transition-colors"
+              >
+                <Pencil size={16} />
+                Edit
+              </Link>
+              <button
+                onClick={() => setConfirming(true)}
+                className="inline-flex items-center justify-center gap-1.5 rounded-lg border border-border bg-white px-3 py-2.5 text-sm font-medium text-danger hover:bg-danger-bg hover:border-danger/40 transition-colors"
+              >
+                <Trash2 size={16} />
+                Delete
+              </button>
+            </div>
+          )}
+        </div>
+      )}
 
       {previewOpen && (
         <div className="border-t border-border bg-cream-dark p-4">

@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { isAuthenticated } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { DashboardNav } from "@/components/DashboardNav";
 
 export default function DashboardGroupLayout({
@@ -11,17 +11,16 @@ export default function DashboardGroupLayout({
   children: React.ReactNode;
 }) {
   const router = useRouter();
-  const [checked, setChecked] = useState(false);
+  const { user, loading } = useAuth();
 
   useEffect(() => {
-    if (!isAuthenticated()) {
+    if (!loading && !user) {
       router.replace("/login");
-    } else {
-      setChecked(true);
     }
-  }, [router]);
+  }, [loading, user, router]);
 
-  if (!checked) return null;
+  // Wait for the session check, and don't flash protected UI when signed out.
+  if (loading || !user) return null;
 
   return (
     <div className="min-h-screen flex flex-col">

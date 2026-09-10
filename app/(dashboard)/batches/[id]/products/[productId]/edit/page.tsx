@@ -1,29 +1,55 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useRef, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { ArrowLeft, ImagePlus, Plus, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { createProduct, uploadProductImage } from "@/lib/api";
+import { getProduct, updateProduct, uploadProductImage } from "@/lib/api";
 import { ProductAttribute } from "@/lib/types";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
+import { useToast } from "@/lib/toast-context";
 
-export default function NewProductPage() {
-  const params = useParams<{ id: string }>();
+export default function EditProductPage() {
+  const params = useParams<{ id: string; productId: string }>();
   const router = useRouter();
+  const toast = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
-  const [attributes, setAttributes] = useState<ProductAttribute[]>([
-    { label: "", value: "" },
-  ]);
-  const [imageUrl, setImageUrl] = useState<string>(""); // local preview only
+  const [attributes, setAttributes] = useState<ProductAttribute[]>([]);
+  // currentImageUrl = what's saved now; previewUrl = what to show; imageFile =
+  // a newly picked file (null means keep the current image).
+  const [currentImageUrl, setCurrentImageUrl] = useState("");
+  const [previewUrl, setPreviewUrl] = useState("");
   const [imageFile, setImageFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    (async () => {
+      const product = await getProduct(params.productId);
+      if (!product) {
+        setNotFound(true);
+        setLoading(false);
+        return;
+      }
+      setName(product.name);
+      setDescription(product.description);
+      setPrice(String(product.price));
+      setAttributes(
+        product.attributes.length ? product.attributes : [{ label: "", value: "" }],
+      );
+      setCurrentImageUrl(product.imageUrl);
+      setPreviewUrl(product.imageUrl);
+      setLoading(false);
+    })();
+  }, [params.productId]);
 
   function updateAttribute(index: number, field: keyof ProductAttribute, value: string) {
     setAttributes((prev) =>
@@ -42,10 +68,9 @@ export default function NewProductPage() {
   function handleImageChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
-    // Keep the File for upload on submit, and show a local preview meanwhile.
     setImageFile(file);
     const reader = new FileReader();
-    reader.onload = () => setImageUrl(reader.result as string);
+    reader.onload = () => setPreviewUrl(reader.result as string);
     reader.readAsDataURL(file);
   }
 
@@ -56,25 +81,39 @@ export default function NewProductPage() {
     setError(null);
     const cleanAttributes = attributes.filter((a) => a.label.trim() && a.value.trim());
     try {
-      // Upload the selected image to Supabase Storage (if any), else fall back
-      // to a generated placeholder SVG data URL.
+      // Only upload if the user picked a new file; otherwise keep the current
+      // image. updateProduct() deletes the old storage image when it changes.
       const hostedImageUrl = imageFile
         ? await uploadProductImage(imageFile)
-        : placeholderFallback(name);
-      const product = await createProduct({
-        batchId: params.id,
+        : currentImageUrl;
+      await updateProduct(params.productId, {
         name: name.trim(),
         description: description.trim(),
         attributes: cleanAttributes,
         price: Number(price),
         imageUrl: hostedImageUrl,
       });
-      router.push(`/batches/${product.batchId}`);
+      toast.success("Product updated");
+      router.push(`/batches/${params.id}`);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Could not save product.");
+      setError(err instanceof Error ? err.message : "Could not update product.");
       setSaving(false);
     }
   }
+
+  if (loading) return <p className="text-ink-soft text-sm">Loading…</p>;
+  if (notFound)
+    return (
+      <Card className="p-8 text-center">
+        <p className="text-ink font-medium">Product not found</p>
+        <Link
+          href={`/batches/${params.id}`}
+          className="text-primary text-sm font-medium mt-2 inline-block"
+        >
+          Back to batch
+        </Link>
+      </Card>
+    );
 
   return (
     <div className="flex flex-col gap-5">
@@ -86,7 +125,7 @@ export default function NewProductPage() {
         Back to batch
       </Link>
 
-      <h1 className="text-2xl font-bold text-ink">Add Product</h1>
+      <h1 className="text-2xl font-bold text-ink">Edit Product</h1>
 
       <Card className="p-5">
         <form onSubmit={handleSubmit} className="flex flex-col gap-5">
@@ -98,8 +137,9 @@ export default function NewProductPage() {
               onClick={() => fileInputRef.current?.click()}
               className="w-full aspect-square max-w-[220px] rounded-xl border-2 border-dashed border-border bg-cream-dark flex flex-col items-center justify-center gap-2 text-ink-soft overflow-hidden"
             >
-              {imageUrl ? (
-                <img src={imageUrl} alt="Preview" className="w-full h-full object-cover" />
+              {previewUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={previewUrl} alt="Preview" className="w-full h-full object-cover" />
               ) : (
                 <>
                   <ImagePlus size={28} />
@@ -107,6 +147,9 @@ export default function NewProductPage() {
                 </>
               )}
             </button>
+            <p className="text-xs text-ink-soft mt-1.5">
+              Tap the image to replace it. The old one is removed automatically.
+            </p>
             <input
               ref={fileInputRef}
               type="file"
@@ -199,21 +242,12 @@ export default function NewProductPage() {
           {error && <p className="text-sm text-danger">{error}</p>}
 
           <Button type="submit" disabled={saving || !name.trim() || !price} fullWidth>
-            {saving ? "Saving…" : "Save Product"}
+            {saving ? "Saving…" : "Save Changes"}
           </Button>
         </form>
       </Card>
     </div>
   );
-}
-
-function placeholderFallback(name: string): string {
-  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='600' height='600'>
-    <rect width='600' height='600' fill='#d9622b'/>
-    <text x='50%' y='50%' font-family='Arial, sans-serif' font-size='36' fill='#fff'
-      text-anchor='middle' dominant-baseline='middle'>${name.slice(0, 16) || "Product"}</text>
-  </svg>`;
-  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
 const inputClass =

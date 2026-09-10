@@ -1,27 +1,27 @@
 "use client";
+"use client";
 
 import { FormEvent, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { CheckCircle2, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import {
-  confirmMockItemPayment,
   getProductBySlug,
   initiateItemPayment,
   submitOrder,
 } from "@/lib/api";
-import { Order, Product } from "@/lib/types";
+import { Product } from "@/lib/types";
 import { formatNaira } from "@/lib/format";
 import { QuantityStepper } from "@/components/QuantityStepper";
 import { Button } from "@/components/Button";
 import { Card } from "@/components/Card";
 
-type Stage = "loading" | "not-found" | "form" | "redirecting" | "success";
+type Stage = "loading" | "not-found" | "form" | "redirecting";
 
 export default function PublicProductPage() {
   const params = useParams<{ slug: string }>();
   const [stage, setStage] = useState<Stage>("loading");
   const [product, setProduct] = useState<Product | null>(null);
-  const [order, setOrder] = useState<Order | null>(null);
+  const [paymentError, setPaymentError] = useState<string | null>(null);
 
   const [quantity, setQuantity] = useState(1);
   const [customerName, setCustomerName] = useState("");
@@ -46,30 +46,31 @@ export default function PublicProductPage() {
     if (!product) return;
     setStage("redirecting");
 
-    // 1. Create the order (item payment still pending).
-    // TODO: replace with real API call in lib/api.ts (submitOrder)
-    const createdOrder = await submitOrder({
-      batchId: product.batchId,
-      productId: product.id,
-      productName: product.name,
-      quantity,
-      customerName,
-      customerPhone,
-      customerEmail,
-      deliveryAddress,
-      itemAmount: product.price * quantity,
-    });
+    try {
+      // 1. Create the order (item payment still pending).
+      const createdOrder = await submitOrder({
+        batchId: product.batchId,
+        productId: product.id,
+        productName: product.name,
+        quantity,
+        customerName,
+        customerPhone,
+        customerEmail,
+        deliveryAddress,
+        itemAmount: product.price * quantity,
+      });
 
-    // 2. Simulate redirecting to Paystack.
-    // TODO: replace with a real Paystack redirect (window.location = authorization_url)
-    await initiateItemPayment(createdOrder.id);
-
-    // 3. Simulate the payment succeeding and the webhook confirming it.
-    // TODO: replace with real payment verification / webhook handling
-    const confirmed = await confirmMockItemPayment(createdOrder.id);
-
-    setOrder(confirmed ?? createdOrder);
-    setStage("success");
+      // 2. Initialize a real Paystack transaction and redirect the browser to
+      //    the hosted checkout. Confirmation happens server-side (webhook +
+      //    callback), which then sends the customer to /payment/success.
+      const { redirectUrl } = await initiateItemPayment(createdOrder.id);
+      window.location.href = redirectUrl;
+    } catch (err) {
+      setPaymentError(
+        err instanceof Error ? err.message : "Could not start payment.",
+      );
+      setStage("form");
+    }
   }
 
   if (stage === "loading") {
@@ -100,27 +101,6 @@ export default function PublicProductPage() {
           <Loader2 size={40} className="animate-spin text-primary" />
           <p className="text-ink font-medium">Redirecting to payment…</p>
           <p className="text-ink-soft text-sm">Please don&apos;t close this window.</p>
-        </div>
-      </PublicShell>
-    );
-  }
-
-  if (stage === "success" && order) {
-    return (
-      <PublicShell>
-        <div className="flex flex-col items-center text-center gap-3 py-10">
-          <CheckCircle2 size={52} className="text-success" />
-          <h1 className="text-xl font-bold text-ink">Payment successful!</h1>
-          <p className="text-ink-soft text-sm max-w-xs">
-            Thanks {order.customerName.split(" ")[0]}, your order{" "}
-            <span className="font-semibold text-ink">{order.orderReference}</span> has been
-            received. We&apos;ll reach out on WhatsApp about shipping.
-          </p>
-          <Card className="p-4 w-full text-left mt-4">
-            <Row label="Order ref" value={order.orderReference} />
-            <Row label="Product" value={`${order.productName} × ${order.quantity}`} />
-            <Row label="Amount paid" value={formatNaira(order.itemPayment.amount)} />
-          </Card>
         </div>
       </PublicShell>
     );
@@ -205,20 +185,13 @@ export default function PublicProductPage() {
           />
         </PublicField>
 
+        {paymentError && <p className="text-sm text-danger">{paymentError}</p>}
+
         <Button type="submit" fullWidth className="mt-2 text-lg py-4">
           Pay Now · {formatNaira(total)}
         </Button>
       </form>
     </PublicShell>
-  );
-}
-
-function Row({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="flex items-center justify-between py-1.5">
-      <span className="text-sm text-ink-soft">{label}</span>
-      <span className="text-sm font-semibold text-ink">{value}</span>
-    </div>
   );
 }
 

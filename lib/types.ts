@@ -60,4 +60,10 @@ export interface OrderFilters {
   itemPaid?: boolean;
   shippingPaid?: boolean;
   dispatchStatus?: DispatchStatus;
+  /**
+   * Include orders still awaiting the item payment (unconfirmed checkout
+   * attempts). Off by default so abandoned/failed checkouts don't clutter the
+   * orders list. They're still reachable by filtering on the dispatch status.
+   */
+  includeUnconfirmed?: boolean;
 }
