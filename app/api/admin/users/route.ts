@@ -10,6 +10,15 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 
+/** Returns the authenticated caller, or null if not signed in. */
+async function requireUser() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  return user;
+}
+
 function generatePassword(length = 16): string {
   // URL-safe, mixed-character password from cryptographic randomness.
   const chars =
@@ -21,14 +30,83 @@ function generatePassword(length = 16): string {
   return out;
 }
 
+// GET /api/admin/users — list all dashboard users.
+export async function GET() {
+  try {
+    const caller = await requireUser();
+    if (!caller) {
+      return NextResponse.json({ error: "Not authorized." }, { status: 401 });
+    }
+
+    const admin = createAdminClient();
+    const { data, error } = await admin.auth.admin.listUsers({
+      page: 1,
+      perPage: 1000,
+    });
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    const users = data.users
+      .map((u) => ({
+        id: u.id,
+        email: u.email ?? "",
+        createdAt: u.created_at,
+        lastSignInAt: u.last_sign_in_at ?? null,
+        isSelf: u.id === caller.id,
+      }))
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+
+    return NextResponse.json({ users });
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Failed to load users.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+// DELETE /api/admin/users?id=<userId> — remove a dashboard user.
+export async function DELETE(request: Request) {
+  try {
+    const caller = await requireUser();
+    if (!caller) {
+      return NextResponse.json({ error: "Not authorized." }, { status: 401 });
+    }
+
+    const id = new URL(request.url).searchParams.get("id");
+    if (!id) {
+      return NextResponse.json(
+        { error: "A user id is required." },
+        { status: 400 },
+      );
+    }
+    // Don't let someone delete their own account and lock themselves out.
+    if (id === caller.id) {
+      return NextResponse.json(
+        { error: "You can't delete your own account." },
+        { status: 400 },
+      );
+    }
+
+    const admin = createAdminClient();
+    const { error } = await admin.auth.admin.deleteUser(id);
+    if (error) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
+    }
+
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : "Failed to delete user.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
 export async function POST(request: Request) {
   try {
     // 1. Require an authenticated caller.
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    if (!user) {
+    const caller = await requireUser();
+    if (!caller) {
       return NextResponse.json({ error: "Not authorized." }, { status: 401 });
     }
 

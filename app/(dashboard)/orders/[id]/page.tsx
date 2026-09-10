@@ -219,13 +219,14 @@ export default function OrderDetailPage() {
       {/* Dispatch controls */}
       <Card className="p-4">
         <SectionTitle>Dispatch</SectionTitle>
-        <div className="grid grid-cols-2 gap-2 mt-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-2">
           <Button
             variant={order.dispatchStatus === "dispatched" ? "secondary" : "primary"}
             disabled={!readyToDispatch || busy || order.dispatchStatus === "delivered"}
             onClick={() => handleSetDispatch("dispatched")}
+            className="whitespace-nowrap"
           >
-            <Truck size={18} />
+            <Truck size={18} className="shrink-0" />
             {order.dispatchStatus === "dispatched" || order.dispatchStatus === "delivered"
               ? "Dispatched"
               : "Mark Dispatched"}
@@ -234,8 +235,9 @@ export default function OrderDetailPage() {
             variant={order.dispatchStatus === "delivered" ? "secondary" : "primary"}
             disabled={busy || order.dispatchStatus !== "dispatched"}
             onClick={() => handleSetDispatch("delivered")}
+            className="whitespace-nowrap"
           >
-            <PackageCheck size={18} />
+            <PackageCheck size={18} className="shrink-0" />
             {order.dispatchStatus === "delivered" ? "Delivered" : "Mark Delivered"}
           </Button>
         </div>

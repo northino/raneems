@@ -1,14 +1,23 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-import { Check, Copy, UserPlus } from "lucide-react";
+import { FormEvent, useCallback, useEffect, useState } from "react";
+import { Check, Copy, Trash2, UserPlus, Users } from "lucide-react";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { useToast } from "@/lib/toast-context";
+import { formatDate } from "@/lib/format";
 
 interface CreatedUser {
   email: string;
   password: string;
+}
+
+interface TeamUser {
+  id: string;
+  email: string;
+  createdAt: string;
+  lastSignInAt: string | null;
+  isSelf: boolean;
 }
 
 export default function AdminUsersPage() {
@@ -19,6 +28,29 @@ export default function AdminUsersPage() {
   const [copied, setCopied] = useState<"email" | "password" | "both" | null>(
     null,
   );
+
+  const [users, setUsers] = useState<TeamUser[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(true);
+  const [confirmingId, setConfirmingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const loadUsers = useCallback(async () => {
+    setLoadingUsers(true);
+    try {
+      const res = await fetch("/api/admin/users");
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Could not load users.");
+      setUsers(json.users as TeamUser[]);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not load users.");
+    } finally {
+      setLoadingUsers(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    loadUsers();
+  }, [loadUsers]);
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
@@ -36,10 +68,29 @@ export default function AdminUsersPage() {
       setCreated({ email: json.email, password: json.password });
       setEmail("");
       toast.success("User created");
+      loadUsers();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Could not create user.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function handleDelete(id: string) {
+    setDeletingId(id);
+    try {
+      const res = await fetch(`/api/admin/users?id=${encodeURIComponent(id)}`, {
+        method: "DELETE",
+      });
+      const json = await res.json();
+      if (!res.ok) throw new Error(json.error || "Could not delete user.");
+      setUsers((prev) => prev.filter((u) => u.id !== id));
+      toast.success("User deleted");
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Could not delete user.");
+    } finally {
+      setDeletingId(null);
+      setConfirmingId(null);
     }
   }
 
@@ -122,6 +173,85 @@ export default function AdminUsersPage() {
           </button>
         </Card>
       )}
+
+      {/* Existing users */}
+      <div>
+        <h2 className="text-lg font-bold text-ink mb-2">
+          Users {users.length > 0 && (
+            <span className="text-ink-soft font-medium">({users.length})</span>
+          )}
+        </h2>
+
+        {loadingUsers ? (
+          <p className="text-ink-soft text-sm">Loading users…</p>
+        ) : users.length === 0 ? (
+          <Card className="p-8 text-center">
+            <Users className="mx-auto text-ink-soft mb-2" size={26} />
+            <p className="text-ink font-medium">No users yet</p>
+          </Card>
+        ) : (
+          <div className="flex flex-col gap-2">
+            {users.map((u) => (
+              <Card key={u.id} className="p-4">
+                {confirmingId === u.id ? (
+                  <div>
+                    <p className="text-sm text-ink font-medium">
+                      Delete {u.email}?
+                    </p>
+                    <p className="text-xs text-ink-soft mt-0.5">
+                      They&apos;ll lose access immediately. This can&apos;t be undone.
+                    </p>
+                    <div className="grid grid-cols-2 gap-2 mt-3">
+                      <button
+                        onClick={() => setConfirmingId(null)}
+                        disabled={deletingId === u.id}
+                        className="inline-flex items-center justify-center rounded-lg border border-border bg-white px-3 py-2.5 text-sm font-medium text-ink hover:bg-cream-dark"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={() => handleDelete(u.id)}
+                        disabled={deletingId === u.id}
+                        className="inline-flex items-center justify-center gap-1.5 rounded-lg bg-danger text-white px-3 py-2.5 text-sm font-semibold hover:opacity-90 disabled:opacity-50"
+                      >
+                        <Trash2 size={16} />
+                        {deletingId === u.id ? "Deleting…" : "Delete"}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium text-ink truncate">
+                        {u.email}
+                        {u.isSelf && (
+                          <span className="ml-2 badge badge-neutral">You</span>
+                        )}
+                      </p>
+                      <p className="text-xs text-ink-soft mt-0.5">
+                        Added {formatDate(u.createdAt)} ·{" "}
+                        {u.lastSignInAt
+                          ? `last sign-in ${formatDate(u.lastSignInAt)}`
+                          : "never signed in"}
+                      </p>
+                    </div>
+                    {!u.isSelf && (
+                      <button
+                        onClick={() => setConfirmingId(u.id)}
+                        aria-label={`Delete ${u.email}`}
+                        className="shrink-0 inline-flex items-center gap-1.5 rounded-lg border border-border bg-white px-3 py-2 text-sm font-medium text-danger hover:bg-danger-bg hover:border-danger/40"
+                      >
+                        <Trash2 size={16} />
+                        Delete
+                      </button>
+                    )}
+                  </div>
+                )}
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
