@@ -25,6 +25,12 @@ export interface InitializeParams {
   reference?: string;
   callbackUrl: string;
   metadata?: Record<string, unknown>;
+  /** Merchant subaccount code (ACCT_...). When set, the payment is split. */
+  subaccount?: string;
+  /** Platform commission in Naira routed to the MAIN account (the rest goes to
+   *  the subaccount). Sent as `transaction_charge` (in kobo). Only used when a
+   *  subaccount is provided. */
+  transactionChargeNaira?: number;
 }
 
 export interface InitializeResult {
@@ -40,19 +46,33 @@ export interface InitializeResult {
 export async function initializeTransaction(
   params: InitializeParams,
 ): Promise<InitializeResult> {
+  const body: Record<string, unknown> = {
+    email: params.email,
+    amount: Math.round(params.amountNaira * 100),
+    reference: params.reference,
+    callback_url: params.callbackUrl,
+    metadata: params.metadata,
+  };
+
+  // Payment split: route `transaction_charge` (the platform commission) to the
+  // MAIN account and the rest to the subaccount. bearer: "account" makes the
+  // main account pay Paystack's transaction fee, so it comes out of our
+  // commission and the merchant's share is untouched.
+  if (params.subaccount) {
+    body.subaccount = params.subaccount;
+    if (params.transactionChargeNaira !== undefined) {
+      body.transaction_charge = Math.round(params.transactionChargeNaira * 100);
+    }
+    body.bearer = "account";
+  }
+
   const res = await fetch(`${PAYSTACK_BASE}/transaction/initialize`, {
     method: "POST",
     headers: {
       Authorization: `Bearer ${secretKey()}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({
-      email: params.email,
-      amount: Math.round(params.amountNaira * 100),
-      reference: params.reference,
-      callback_url: params.callbackUrl,
-      metadata: params.metadata,
-    }),
+    body: JSON.stringify(body),
     // Never cache payment calls.
     cache: "no-store",
   });

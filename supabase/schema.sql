@@ -79,11 +79,15 @@ create table if not exists public.orders (
   item_amount           integer,
   item_paid_at          timestamptz,
   item_payment_reference   text,  -- Paystack transaction reference (item payment)
+  item_platform_fee     integer, -- platform commission on the item payment (₦)
+  item_merchant_amount  integer, -- merchant subaccount share of the item payment (₦)
 
   shipping_paid         boolean not null default false,
   shipping_amount       integer,
   shipping_paid_at      timestamptz,
   shipping_payment_reference text, -- Paystack transaction reference (shipping payment)
+  shipping_platform_fee integer, -- platform commission on the shipping payment (₦)
+  shipping_merchant_amount integer, -- merchant subaccount share of the shipping payment (₦)
 
   dispatch_status       dispatch_status not null default 'awaiting_item_payment',
   created_at            timestamptz not null default now()
@@ -97,6 +101,10 @@ create index if not exists orders_shipping_ref_idx on public.orders(shipping_pay
 -- columns without recreating the table:
 alter table public.orders add column if not exists item_payment_reference text;
 alter table public.orders add column if not exists shipping_payment_reference text;
+alter table public.orders add column if not exists item_platform_fee integer;
+alter table public.orders add column if not exists item_merchant_amount integer;
+alter table public.orders add column if not exists shipping_platform_fee integer;
+alter table public.orders add column if not exists shipping_merchant_amount integer;
 
 -- Order reference sequence --------------------------------------------------
 -- Mirrors the mock "RNM-1001, RNM-1002…" scheme with a DB sequence so

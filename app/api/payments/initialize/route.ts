@@ -9,6 +9,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { initializeTransaction } from "@/lib/paystack";
+import { computeFeeBreakdown } from "@/lib/fees";
 
 export async function POST(request: Request) {
   try {
@@ -49,23 +50,58 @@ export async function POST(request: Request) {
       process.env.NEXT_PUBLIC_SITE_URL ?? new URL(request.url).origin;
     const callbackUrl = `${siteUrl}/api/payments/callback`;
 
+    // Split: the customer pays `amountNaira`; the platform keeps a commission
+    // (₦150 + 8.5%), the merchant subaccount gets the rest. If no subaccount is
+    // configured, the payment isn't split (all goes to the main account).
+    const fees = computeFeeBreakdown(amountNaira);
+    const rawSubaccount = process.env.PAYSTACK_SUBACCOUNT_CODE?.trim();
+    // Guard against a common .env typo (e.g. a stray leading "=" or quotes):
+    // a valid Paystack subaccount code starts with "ACCT_".
+    if (rawSubaccount && !rawSubaccount.startsWith("ACCT_")) {
+      return NextResponse.json(
+        {
+          error:
+            "PAYSTACK_SUBACCOUNT_CODE is malformed — it must start with 'ACCT_'. Check .env.local for a stray '=' or quotes.",
+        },
+        { status: 500 },
+      );
+    }
+    const subaccount = rawSubaccount || undefined;
+
     const { authorizationUrl, reference } = await initializeTransaction({
       email: order.customer_email,
       amountNaira,
       callbackUrl,
+      subaccount,
+      transactionChargeNaira: subaccount
+        ? fees.platformCommissionNaira
+        : undefined,
       metadata: {
         orderId: order.id,
         orderReference: order.order_reference,
         paymentType: type,
+        platformCommission: fees.platformCommissionNaira,
+        merchantAmount: fees.merchantAmountNaira,
       },
     });
 
-    // Store the reference so the callback + webhook can correlate it back.
-    const refColumn =
-      type === "item" ? "item_payment_reference" : "shipping_payment_reference";
+    // Store the reference (for webhook/callback correlation) and the fee split
+    // breakdown for this payment.
+    const update =
+      type === "item"
+        ? {
+            item_payment_reference: reference,
+            item_platform_fee: fees.platformCommissionNaira,
+            item_merchant_amount: fees.merchantAmountNaira,
+          }
+        : {
+            shipping_payment_reference: reference,
+            shipping_platform_fee: fees.platformCommissionNaira,
+            shipping_merchant_amount: fees.merchantAmountNaira,
+          };
     const { error: updateError } = await supabase
       .from("orders")
-      .update({ [refColumn]: reference })
+      .update(update)
       .eq("id", orderId);
     if (updateError) throw updateError;
 
