@@ -561,6 +561,55 @@ export async function generateShipmentLink(
   return { url: json.authorizationUrl as string };
 }
 
+// ---------------------------------------------------------------------------
+// GafiaPay (bank transfer to a virtual account) — second payment option.
+// ---------------------------------------------------------------------------
+
+export interface GafiaAccount {
+  accountNumber: string;
+  bankName: string;
+  accountName: string;
+  amount: number;
+}
+
+/**
+ * Starts a GafiaPay item payment: generates a virtual account for the customer
+ * to transfer into. Requires the customer's BVN or NIN. Payment is confirmed
+ * asynchronously by the GafiaPay webhook.
+ */
+export async function initiateItemPaymentGafia(
+  orderId: string,
+  id: { bvn?: string; nin?: string },
+): Promise<GafiaAccount> {
+  const res = await fetch("/api/gafiapay/initialize", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderId, type: "item", ...id }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "Could not start GafiaPay payment.");
+  return json as GafiaAccount;
+}
+
+/**
+ * Generates a GafiaPay virtual account for the shipping cost. The owner sends
+ * these transfer details to the customer over WhatsApp. Requires the
+ * customer's BVN or NIN. Call setShippingCost() first.
+ */
+export async function generateShipmentGafia(
+  orderId: string,
+  id: { bvn?: string; nin?: string },
+): Promise<GafiaAccount> {
+  const res = await fetch("/api/gafiapay/initialize", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderId, type: "shipping", ...id }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "Could not create GafiaPay transfer.");
+  return json as GafiaAccount;
+}
+
 export async function setDispatchStatus(
   orderId: string,
   status: DispatchStatus,
