@@ -12,7 +12,7 @@
 --   * batches / products / orders are readable+writable by any AUTHENTICATED
 --     user (the shop owner logs in). This mirrors the current single-owner app.
 --   * products and orders are ALSO readable by anonymous visitors so the
---     public catalogue (/p/[slug]) and public checkout can work without login.
+--     public catalogue (/p/[slug]) and public checkout can work without login
 --   * anonymous visitors may INSERT an order (public "Pay Now" flow).
 -- Tighten these later (e.g. per-owner ownership) once multi-tenant is needed.
 -- ---------------------------------------------------------------------------
