@@ -48,9 +48,39 @@ async function signedPost<T>(path: string, body: Record<string, unknown>): Promi
   });
   const json = (await res.json()) as { status?: string; message?: string } & T;
   if (!res.ok || json.status === "fail") {
-    throw new Error(json.message || "GafiaPay request failed");
+    const raw = json.message || "GafiaPay request failed";
+    // Log the raw provider message for debugging, but throw a friendly one.
+    console.error("[gafiapay] request failed:", raw);
+    throw new Error(friendlyGafiaError(raw));
   }
   return json;
+}
+
+/**
+ * Translate GafiaPay / upstream KYC error messages into customer-friendly
+ * text. Verification failures (bad BVN/NIN) are the common case and shouldn't
+ * leak raw provider wording like "LicenseNumber verification failed".
+ */
+export function friendlyGafiaError(raw: string): string {
+  const m = raw.toLowerCase();
+  if (
+    m.includes("verification failed") ||
+    m.includes("licensenumber") ||
+    m.includes("not found") ||
+    m.includes("invalid bvn") ||
+    m.includes("invalid nin") ||
+    m.includes("no record")
+  ) {
+    return "We couldn't verify that BVN or NIN. Please double-check the number and try again.";
+  }
+  if (m.includes("name") && m.includes("match")) {
+    return "The BVN/NIN doesn't match the name entered. Please use the name registered to that ID.";
+  }
+  if (m.includes("timeout") || m.includes("unavailable") || m.includes("try again")) {
+    return "The verification service is temporarily unavailable. Please try again in a moment.";
+  }
+  // Fallback: a generic, safe message (raw is still logged server-side).
+  return "Unable to verify your details right now. Please try again or use card payment.";
 }
 
 export interface VirtualAccount {

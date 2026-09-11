@@ -31,6 +31,7 @@ export default function PublicProductPage() {
   const [customerEmail, setCustomerEmail] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [identityNumber, setIdentityNumber] = useState(""); // BVN or NIN (GafiaPay)
+  const [identityType, setIdentityType] = useState<"bvn" | "nin">("bvn");
 
   const [gafiaAccount, setGafiaAccount] = useState<GafiaAccount | null>(null);
   const [gafiaPaid, setGafiaPaid] = useState(false);
@@ -100,9 +101,12 @@ export default function PublicProductPage() {
     setStage("redirecting");
     try {
       const order = await createOrder();
-      const account = await initiateItemPaymentGafia(order.id, {
-        bvn: identityNumber.trim(),
-      });
+      const account = await initiateItemPaymentGafia(
+        order.id,
+        identityType === "bvn"
+          ? { bvn: identityNumber.trim() }
+          : { nin: identityNumber.trim() },
+      );
       setGafiaAccount(account);
       setStage("gafia-waiting");
       // Poll the order until the GafiaPay webhook marks the item paid.
@@ -167,114 +171,145 @@ export default function PublicProductPage() {
   const total = product.price * quantity;
 
   return (
-    <PublicShell>
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={product.imageUrl}
-        alt={product.name}
-        className="w-full aspect-square rounded-2xl object-cover border border-border"
-      />
-      <h1 className="text-2xl font-bold text-ink mt-4">{product.name}</h1>
-      <p className="text-ink-soft mt-1">{product.description}</p>
+    <PublicShell wide>
+      <div className="grid grid-cols-1 md:grid-cols-2 md:gap-8 md:items-start">
+        {/* Left — product details */}
+        <div>
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={product.imageUrl}
+            alt={product.name}
+            className="w-full aspect-square rounded-2xl object-cover border border-border"
+          />
+          <h1 className="text-2xl font-bold text-ink mt-4">{product.name}</h1>
+          <p className="text-ink-soft mt-1">{product.description}</p>
 
-      {product.attributes.length > 0 && (
-        <div className="flex flex-wrap gap-1.5 mt-3">
-          {product.attributes.map((attr, i) => (
-            <span key={i} className="badge badge-neutral">
-              {attr.label}: {attr.value}
-            </span>
-          ))}
+          {product.attributes.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mt-3">
+              {product.attributes.map((attr, i) => (
+                <span key={i} className="badge badge-neutral">
+                  {attr.label}: {attr.value}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <p className="text-2xl font-bold text-primary-dark mt-3">
+            {formatNaira(product.price)}
+          </p>
         </div>
-      )}
 
-      <p className="text-2xl font-bold text-primary-dark mt-3">{formatNaira(product.price)}</p>
-
-      <form onSubmit={handlePaystack} className="flex flex-col gap-4 mt-6">
-        <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-ink">Quantity</span>
-          <QuantityStepper value={quantity} onChange={setQuantity} />
-        </div>
-
-        <Card className="p-4 flex items-center justify-between bg-cream-dark border-none">
-          <span className="text-sm font-medium text-ink-soft">Total</span>
-          <span className="text-xl font-bold text-ink">{formatNaira(total)}</span>
-        </Card>
-
-        <hr className="border-border" />
-
-        <PublicField label="Full name">
-          <input
-            required
-            value={customerName}
-            onChange={(e) => setCustomerName(e.target.value)}
-            placeholder="Your name"
-            className={inputClass}
-          />
-        </PublicField>
-        <PublicField label="Phone number">
-          <input
-            required
-            type="tel"
-            value={customerPhone}
-            onChange={(e) => setCustomerPhone(e.target.value)}
-            placeholder="e.g. 08031234567"
-            className={inputClass}
-          />
-        </PublicField>
-        <PublicField label="Email">
-          <input
-            required
-            type="email"
-            value={customerEmail}
-            onChange={(e) => setCustomerEmail(e.target.value)}
-            placeholder="you@example.com"
-            className={inputClass}
-          />
-        </PublicField>
-        <PublicField label="Delivery address">
-          <textarea
-            required
-            rows={2}
-            value={deliveryAddress}
-            onChange={(e) => setDeliveryAddress(e.target.value)}
-            placeholder="Street, city, state"
-            className={`${inputClass} resize-none`}
-          />
-        </PublicField>
-
-        <PublicField label="BVN or NIN (only needed to pay by bank transfer)">
-          <input
-            inputMode="numeric"
-            value={identityNumber}
-            onChange={(e) =>
-              setIdentityNumber(e.target.value.replace(/\D/g, "").slice(0, 11))
-            }
-            placeholder="11-digit BVN or NIN"
-            className={inputClass}
-          />
-        </PublicField>
-
-        {paymentError && <p className="text-sm text-danger">{paymentError}</p>}
-
-        {/* Two payment options */}
-        <Button type="submit" fullWidth className="mt-1 text-lg py-4">
-          Pay with Paystack · {formatNaira(total)}
-        </Button>
-        <div className="flex items-center gap-3 text-xs text-ink-soft">
-          <span className="h-px flex-1 bg-border" />
-          or
-          <span className="h-px flex-1 bg-border" />
-        </div>
-        <Button
-          type="button"
-          variant="secondary"
-          fullWidth
-          className="text-lg py-4"
-          onClick={handleGafiaPay}
+        {/* Right — order form + payment */}
+        <form
+          onSubmit={handlePaystack}
+          className="flex flex-col gap-4 mt-6 md:mt-0"
         >
-          Pay with GafiaPay (Bank Transfer)
-        </Button>
-      </form>
+          <div className="flex items-center justify-between">
+            <span className="text-sm font-medium text-ink">Quantity</span>
+            <QuantityStepper value={quantity} onChange={setQuantity} />
+          </div>
+
+          <Card className="p-4 flex items-center justify-between bg-cream-dark border-none">
+            <span className="text-sm font-medium text-ink-soft">Total</span>
+            <span className="text-xl font-bold text-ink">{formatNaira(total)}</span>
+          </Card>
+
+          <hr className="border-border" />
+
+          <PublicField label="Full name">
+            <input
+              required
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              placeholder="Your name"
+              className={inputClass}
+            />
+          </PublicField>
+          <PublicField label="Phone number">
+            <input
+              required
+              type="tel"
+              value={customerPhone}
+              onChange={(e) => setCustomerPhone(e.target.value)}
+              placeholder="e.g. 08031234567"
+              className={inputClass}
+            />
+          </PublicField>
+          <PublicField label="Email">
+            <input
+              required
+              type="email"
+              value={customerEmail}
+              onChange={(e) => setCustomerEmail(e.target.value)}
+              placeholder="you@example.com"
+              className={inputClass}
+            />
+          </PublicField>
+          <PublicField label="Delivery address">
+            <textarea
+              required
+              rows={2}
+              value={deliveryAddress}
+              onChange={(e) => setDeliveryAddress(e.target.value)}
+              placeholder="Street, city, state"
+              className={`${inputClass} resize-none`}
+            />
+          </PublicField>
+
+          <PublicField label="BVN or NIN (only needed to pay by bank transfer)">
+            <div className="flex gap-2 mb-2">
+              {(["bvn", "nin"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setIdentityType(t)}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    identityType === t
+                      ? "border-primary bg-primary-light text-primary-dark"
+                      : "border-border bg-white text-ink-soft hover:bg-cream-dark"
+                  }`}
+                >
+                  {t.toUpperCase()}
+                </button>
+              ))}
+            </div>
+            <input
+              inputMode="numeric"
+              value={identityNumber}
+              onChange={(e) =>
+                setIdentityNumber(e.target.value.replace(/\D/g, "").slice(0, 11))
+              }
+              placeholder={`11-digit ${identityType.toUpperCase()}`}
+              className={inputClass}
+            />
+          </PublicField>
+
+          {paymentError && <p className="text-sm text-danger">{paymentError}</p>}
+
+          {/* Payment options — bank transfer first, then Paystack */}
+          <Button
+            type="button"
+            fullWidth
+            className="mt-1 text-lg py-4"
+            onClick={handleGafiaPay}
+          >
+            Pay with GafiaPay (Bank Transfer)
+          </Button>
+          <div className="flex items-center gap-3 text-xs text-ink-soft">
+            <span className="h-px flex-1 bg-border" />
+            or
+            <span className="h-px flex-1 bg-border" />
+          </div>
+          <Button
+            type="submit"
+            variant="secondary"
+            fullWidth
+            className="text-lg py-4"
+          >
+            Pay with Paystack · {formatNaira(total)}
+          </Button>
+        </form>
+      </div>
     </PublicShell>
   );
 }
@@ -368,10 +403,16 @@ function PublicField({ label, children }: { label: string; children: React.React
   );
 }
 
-function PublicShell({ children }: { children: React.ReactNode }) {
+function PublicShell({
+  children,
+  wide,
+}: {
+  children: React.ReactNode;
+  wide?: boolean;
+}) {
   return (
     <div className="min-h-screen flex justify-center px-4 py-6">
-      <div className="w-full max-w-md">
+      <div className={`w-full ${wide ? "max-w-3xl" : "max-w-md"}`}>
         <div className="flex items-center gap-2 mb-5">
           <span className="w-7 h-7 rounded-lg bg-primary text-white flex items-center justify-center font-bold text-sm">
             R

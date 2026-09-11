@@ -38,6 +38,7 @@ export default function OrderDetailPage() {
 
   // GafiaPay shipping (bank transfer) option
   const [identityNumber, setIdentityNumber] = useState(""); // customer BVN/NIN
+  const [identityType, setIdentityType] = useState<"bvn" | "nin">("bvn");
   const [gafiaAccount, setGafiaAccount] = useState<GafiaAccount | null>(null);
   const [gafiaError, setGafiaError] = useState<string | null>(null);
   const [gafiaBusy, setGafiaBusy] = useState(false);
@@ -103,9 +104,12 @@ export default function OrderDetailPage() {
     setGafiaBusy(true);
     try {
       const updated = await setShippingCost(order.id, Number(shippingAmount));
-      const account = await generateShipmentGafia(order.id, {
-        bvn: identityNumber.trim(),
-      });
+      const account = await generateShipmentGafia(
+        order.id,
+        identityType === "bvn"
+          ? { bvn: identityNumber.trim() }
+          : { nin: identityNumber.trim() },
+      );
       if (updated) setOrder(updated);
       setGafiaAccount(account);
     } catch (err) {
@@ -260,13 +264,29 @@ export default function OrderDetailPage() {
             </div>
 
             {/* Option 2 — GafiaPay virtual account (bank transfer) */}
+            <div className="flex gap-2">
+              {(["bvn", "nin"] as const).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setIdentityType(t)}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+                    identityType === t
+                      ? "border-primary bg-primary-light text-primary-dark"
+                      : "border-border bg-white text-ink-soft hover:bg-cream-dark"
+                  }`}
+                >
+                  {t.toUpperCase()}
+                </button>
+              ))}
+            </div>
             <input
               inputMode="numeric"
               value={identityNumber}
               onChange={(e) =>
                 setIdentityNumber(e.target.value.replace(/\D/g, "").slice(0, 11))
               }
-              placeholder="Customer BVN or NIN (11 digits)"
+              placeholder={`Customer ${identityType.toUpperCase()} (11 digits)`}
               className="w-full rounded-xl border border-border bg-white px-4 py-3 text-base text-ink placeholder:text-ink-soft/60 focus:outline-none focus:ring-2 focus:ring-primary"
             />
             <Button
