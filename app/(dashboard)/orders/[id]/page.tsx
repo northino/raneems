@@ -12,10 +12,12 @@ import {
   Truck,
 } from "lucide-react";
 import {
+  generateShipmentGafia,
   generateShipmentLink,
   getOrder,
   setDispatchStatus,
   setShippingCost,
+  type GafiaAccount,
 } from "@/lib/api";
 import { Order } from "@/lib/types";
 import { buildWhatsAppLink, formatDateTime, formatNaira } from "@/lib/format";
@@ -33,6 +35,12 @@ export default function OrderDetailPage() {
   const [generating, setGenerating] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [busy, setBusy] = useState(false);
+
+  // GafiaPay shipping (bank transfer) option
+  const [identityNumber, setIdentityNumber] = useState(""); // customer BVN/NIN
+  const [gafiaAccount, setGafiaAccount] = useState<GafiaAccount | null>(null);
+  const [gafiaError, setGafiaError] = useState<string | null>(null);
+  const [gafiaBusy, setGafiaBusy] = useState(false);
 
   async function load() {
     const o = await getOrder(params.id);
@@ -82,6 +90,38 @@ export default function OrderDetailPage() {
     const message = `Hi ${order.customerName.split(" ")[0]}, here's your shipping payment link for order ${order.orderReference} (${formatNaira(
       Number(shippingAmount),
     )}): ${shipmentLink}`;
+    window.open(buildWhatsAppLink(order.customerPhone, message), "_blank");
+  }
+
+  async function handleGenerateGafia() {
+    if (!shippingAmount || !order) return;
+    setGafiaError(null);
+    if (!/^\d{11}$/.test(identityNumber.trim())) {
+      setGafiaError("Enter the customer's 11-digit BVN or NIN for a transfer.");
+      return;
+    }
+    setGafiaBusy(true);
+    try {
+      const updated = await setShippingCost(order.id, Number(shippingAmount));
+      const account = await generateShipmentGafia(order.id, {
+        bvn: identityNumber.trim(),
+      });
+      if (updated) setOrder(updated);
+      setGafiaAccount(account);
+    } catch (err) {
+      setGafiaError(
+        err instanceof Error ? err.message : "Could not create transfer.",
+      );
+    } finally {
+      setGafiaBusy(false);
+    }
+  }
+
+  function handleSendGafiaWhatsApp() {
+    if (!order || !gafiaAccount) return;
+    const message = `Hi ${order.customerName.split(" ")[0]}, to pay shipping for order ${order.orderReference}, transfer ${formatNaira(
+      gafiaAccount.amount,
+    )} to:\nBank: ${gafiaAccount.bankName}\nAccount: ${gafiaAccount.accountNumber}\nName: ${gafiaAccount.accountName}`;
     window.open(buildWhatsAppLink(order.customerPhone, message), "_blank");
   }
 
@@ -162,7 +202,7 @@ export default function OrderDetailPage() {
           </>
         ) : order.itemPayment.paid ? (
           <div className="flex flex-col gap-3 mt-2">
-            <form onSubmit={handleGenerateLink} className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2">
               <label htmlFor="ship-amount" className="text-sm font-medium text-ink">
                 Shipping / import cost for this customer (₦)
               </label>
@@ -176,9 +216,18 @@ export default function OrderDetailPage() {
                 placeholder="e.g. 4500"
                 className="w-full rounded-xl border border-border bg-white px-4 py-3 text-base text-ink focus:outline-none focus:ring-2 focus:ring-primary"
               />
-              <Button type="submit" disabled={generating || !shippingAmount}>
-                <Truck size={18} />
-                {generating ? "Generating…" : "Generate Shipment Link"}
+            </div>
+
+            {/* Option 1 — Paystack payment link */}
+            <form onSubmit={handleGenerateLink}>
+              <Button
+                type="submit"
+                fullWidth
+                disabled={generating || !shippingAmount}
+                className="whitespace-nowrap"
+              >
+                <Truck size={18} className="shrink-0" />
+                {generating ? "Generating…" : "Pay with Paystack (Link)"}
               </Button>
             </form>
 
@@ -204,8 +253,54 @@ export default function OrderDetailPage() {
               </div>
             )}
 
+            <div className="flex items-center gap-3 text-xs text-ink-soft">
+              <span className="h-px flex-1 bg-border" />
+              or bank transfer
+              <span className="h-px flex-1 bg-border" />
+            </div>
+
+            {/* Option 2 — GafiaPay virtual account (bank transfer) */}
+            <input
+              inputMode="numeric"
+              value={identityNumber}
+              onChange={(e) =>
+                setIdentityNumber(e.target.value.replace(/\D/g, "").slice(0, 11))
+              }
+              placeholder="Customer BVN or NIN (11 digits)"
+              className="w-full rounded-xl border border-border bg-white px-4 py-3 text-base text-ink placeholder:text-ink-soft/60 focus:outline-none focus:ring-2 focus:ring-primary"
+            />
+            <Button
+              type="button"
+              variant="secondary"
+              fullWidth
+              disabled={gafiaBusy || !shippingAmount}
+              onClick={handleGenerateGafia}
+              className="whitespace-nowrap"
+            >
+              <Truck size={18} className="shrink-0" />
+              {gafiaBusy ? "Generating…" : "Pay with GafiaPay (Transfer)"}
+            </Button>
+
+            {gafiaError && <p className="text-sm text-danger">{gafiaError}</p>}
+
+            {gafiaAccount && (
+              <div className="flex flex-col gap-2 bg-cream-dark rounded-xl p-3">
+                <Row label="Bank" value={gafiaAccount.bankName} />
+                <Row label="Account" value={gafiaAccount.accountNumber} />
+                <Row label="Name" value={gafiaAccount.accountName} />
+                <Row label="Amount" value={formatNaira(gafiaAccount.amount)} />
+                <button
+                  onClick={handleSendGafiaWhatsApp}
+                  className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#25D366] text-white px-3 py-2.5 text-sm font-semibold hover:opacity-90"
+                >
+                  <MessageCircle size={16} />
+                  Send transfer details via WhatsApp
+                </button>
+              </div>
+            )}
+
             <p className="text-xs text-ink-soft border-t border-border pt-3 mt-1">
-              Once the customer pays this link, Paystack confirms it
+              Once the customer pays (link or transfer), it&apos;s confirmed
               automatically and the order moves to “ready to dispatch”.
             </p>
           </div>

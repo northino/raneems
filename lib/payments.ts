@@ -119,6 +119,78 @@ export async function applyPaymentByReference(
   return applyToOrder(supabase, order, type);
 }
 
+interface GafiaOrderRow extends OrderRow {
+  item_provider: string | null;
+  shipping_provider: string | null;
+  item_gafia_account: string | null;
+  shipping_gafia_account: string | null;
+  item_amount: number | null;
+  shipping_amount: number | null;
+}
+
+/**
+ * Apply a confirmed GafiaPay transfer. GafiaPay reuses one virtual account per
+ * customer email and doesn't echo our order metadata, so we correlate by the
+ * virtual account number + the matching unpaid amount. Idempotent.
+ *
+ * Resolution:
+ *   1. If metadata carries our orderId, use it directly.
+ *   2. Otherwise find an order whose stored gafia account matches AND whose
+ *      corresponding unpaid amount equals the paid amount.
+ */
+export async function applyGafiaPayment(
+  supabase: SupabaseClient,
+  params: {
+    accountNumber?: string | null;
+    amountNaira: number;
+    orderId?: string | null;
+    type?: PaymentType | null;
+  },
+): Promise<ApplyResult> {
+  // 1. Direct by metadata orderId + type.
+  if (params.orderId && (params.type === "item" || params.type === "shipping")) {
+    const { data } = await supabase
+      .from("orders")
+      .select("id, item_paid, shipping_paid")
+      .eq("id", params.orderId)
+      .maybeSingle();
+    if (data) return applyToOrder(supabase, data as OrderRow, params.type);
+  }
+
+  // 2. By virtual account number + matching unpaid amount.
+  if (!params.accountNumber) return { orderId: null, applied: false };
+
+  const { data: itemMatch } = await supabase
+    .from("orders")
+    .select("id, item_paid, shipping_paid, item_amount, shipping_amount")
+    .eq("item_provider", "gafiapay")
+    .eq("item_gafia_account", params.accountNumber)
+    .eq("item_paid", false)
+    .eq("item_amount", Math.round(params.amountNaira))
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (itemMatch) {
+    return applyToOrder(supabase, itemMatch as GafiaOrderRow, "item");
+  }
+
+  const { data: shipMatch } = await supabase
+    .from("orders")
+    .select("id, item_paid, shipping_paid, item_amount, shipping_amount")
+    .eq("shipping_provider", "gafiapay")
+    .eq("shipping_gafia_account", params.accountNumber)
+    .eq("shipping_paid", false)
+    .eq("shipping_amount", Math.round(params.amountNaira))
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (shipMatch) {
+    return applyToOrder(supabase, shipMatch as GafiaOrderRow, "shipping");
+  }
+
+  return { orderId: null, applied: false };
+}
+
 /** Parse the orderId + payment type out of a Paystack metadata object. */
 export function hintsFromMetadata(metadata: unknown): PaymentHints {
   if (!metadata || typeof metadata !== "object") return {};

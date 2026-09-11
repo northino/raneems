@@ -42,3 +42,19 @@ export function computeFeeBreakdown(amountNaira: number): FeeBreakdown {
     merchantAmountNaira: amountNaira - platformCommissionNairaValue,
   };
 }
+
+// --- GafiaPay -------------------------------------------------------------
+// GafiaPay charges 1% and the split is a flat percentage configured in their
+// dashboard. We take a flat 4% platform commission; Raneems keeps 96% (net of
+// GafiaPay's 1%, which comes off before the split). The 4% here is recorded
+// for our own bookkeeping — the actual split is enforced by GafiaPay.
+export const GAFIAPAY_PLATFORM_PERCENT = 0.04; // 4%
+
+export function computeGafiaFeeBreakdown(amountNaira: number): FeeBreakdown {
+  const commission = Math.round(GAFIAPAY_PLATFORM_PERCENT * amountNaira);
+  return {
+    totalNaira: amountNaira,
+    platformCommissionNaira: commission,
+    merchantAmountNaira: amountNaira - commission,
+  };
+}
