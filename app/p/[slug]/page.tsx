@@ -30,7 +30,10 @@ export default function PublicProductPage() {
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
   const [deliveryAddress, setDeliveryAddress] = useState("");
+  // GafiaPay identity inputs — setters used by the temporarily-hidden BVN/NIN field.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [identityNumber, setIdentityNumber] = useState(""); // BVN or NIN (GafiaPay)
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const [identityType, setIdentityType] = useState<"bvn" | "nin">("bvn");
 
   const [gafiaAccount, setGafiaAccount] = useState<GafiaAccount | null>(null);
@@ -90,6 +93,8 @@ export default function PublicProductPage() {
     }
   }
 
+  // Kept for when GafiaPay is re-enabled (its CTA is temporarily hidden).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleGafiaPay() {
     if (!product) return;
     setPaymentError(null);
@@ -256,6 +261,8 @@ export default function PublicProductPage() {
             />
           </PublicField>
 
+          {/* BVN/NIN — only needed for the GafiaPay bank-transfer option,
+              which is temporarily disabled. Re-enable with the GafiaPay CTA.
           <PublicField label="BVN or NIN (only needed to pay by bank transfer)">
             <div className="flex gap-2 mb-2">
               {(["bvn", "nin"] as const).map((t) => (
@@ -283,10 +290,13 @@ export default function PublicProductPage() {
               className={inputClass}
             />
           </PublicField>
+          */}
 
           {paymentError && <p className="text-sm text-danger">{paymentError}</p>}
 
-          {/* Payment options — bank transfer first, then Paystack */}
+          {/* Payment options.
+              GafiaPay (bank transfer) is temporarily disabled — re-enable the
+              block below (and the BVN/NIN field above) to bring it back.
           <Button
             type="button"
             fullWidth
@@ -300,13 +310,9 @@ export default function PublicProductPage() {
             or
             <span className="h-px flex-1 bg-border" />
           </div>
-          <Button
-            type="submit"
-            variant="secondary"
-            fullWidth
-            className="text-lg py-4"
-          >
-            Pay with Paystack · {formatNaira(total)}
+          */}
+          <Button type="submit" fullWidth className="mt-1 text-lg py-4">
+            Pay {formatNaira(total)}
           </Button>
         </form>
       </div>

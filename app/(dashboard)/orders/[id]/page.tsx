@@ -36,12 +36,15 @@ export default function OrderDetailPage() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [busy, setBusy] = useState(false);
 
-  // GafiaPay shipping (bank transfer) option
+  // GafiaPay shipping (bank transfer) option — temporarily disabled. Setters
+  // are used by the hidden UI/handlers below; kept for easy re-enabling.
+  /* eslint-disable @typescript-eslint/no-unused-vars */
   const [identityNumber, setIdentityNumber] = useState(""); // customer BVN/NIN
   const [identityType, setIdentityType] = useState<"bvn" | "nin">("bvn");
   const [gafiaAccount, setGafiaAccount] = useState<GafiaAccount | null>(null);
   const [gafiaError, setGafiaError] = useState<string | null>(null);
   const [gafiaBusy, setGafiaBusy] = useState(false);
+  /* eslint-enable @typescript-eslint/no-unused-vars */
 
   async function load() {
     const o = await getOrder(params.id);
@@ -94,6 +97,7 @@ export default function OrderDetailPage() {
     window.open(buildWhatsAppLink(order.customerPhone, message), "_blank");
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleGenerateGafia() {
     if (!shippingAmount || !order) return;
     setGafiaError(null);
@@ -121,6 +125,7 @@ export default function OrderDetailPage() {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function handleSendGafiaWhatsApp() {
     if (!order || !gafiaAccount) return;
     const message = `Hi ${order.customerName.split(" ")[0]}, to pay shipping for order ${order.orderReference}, transfer ${formatNaira(
@@ -231,7 +236,7 @@ export default function OrderDetailPage() {
                 className="whitespace-nowrap"
               >
                 <Truck size={18} className="shrink-0" />
-                {generating ? "Generating…" : "Pay with Paystack (Link)"}
+                {generating ? "Generating…" : "Generate Payment Link"}
               </Button>
             </form>
 
@@ -257,13 +262,13 @@ export default function OrderDetailPage() {
               </div>
             )}
 
+            {/* Option 2 — GafiaPay bank transfer. Temporarily disabled; the
+                handlers/state are kept below for easy re-enabling.
             <div className="flex items-center gap-3 text-xs text-ink-soft">
               <span className="h-px flex-1 bg-border" />
               or bank transfer
               <span className="h-px flex-1 bg-border" />
             </div>
-
-            {/* Option 2 — GafiaPay virtual account (bank transfer) */}
             <div className="flex gap-2">
               {(["bvn", "nin"] as const).map((t) => (
                 <button
@@ -318,10 +323,11 @@ export default function OrderDetailPage() {
                 </button>
               </div>
             )}
+            */}
 
             <p className="text-xs text-ink-soft border-t border-border pt-3 mt-1">
-              Once the customer pays (link or transfer), it&apos;s confirmed
-              automatically and the order moves to “ready to dispatch”.
+              Once the customer pays this link, it&apos;s confirmed automatically
+              and the order moves to “ready to dispatch”.
             </p>
           </div>
         ) : (
