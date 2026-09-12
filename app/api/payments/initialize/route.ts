@@ -9,7 +9,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { initializeTransaction } from "@/lib/paystack";
-import { computeFeeBreakdown } from "@/lib/fees";
+import { computeFeeBreakdown, MIN_SHIPPING_NAIRA } from "@/lib/fees";
 
 export async function POST(request: Request) {
   try {
@@ -42,6 +42,15 @@ export async function POST(request: Request) {
     if (!amountNaira || amountNaira <= 0) {
       return NextResponse.json(
         { error: `No ${type} amount set on this order.` },
+        { status: 400 },
+      );
+    }
+
+    // Enforce a minimum shipping fee so the commission doesn't consume the
+    // whole payment and leave the merchant nothing.
+    if (type === "shipping" && amountNaira < MIN_SHIPPING_NAIRA) {
+      return NextResponse.json(
+        { error: `Shipping fee must be at least ₦${MIN_SHIPPING_NAIRA}.` },
         { status: 400 },
       );
     }

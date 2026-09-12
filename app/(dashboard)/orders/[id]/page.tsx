@@ -21,6 +21,7 @@ import {
 } from "@/lib/api";
 import { Order } from "@/lib/types";
 import { buildWhatsAppLink, formatDateTime, formatNaira } from "@/lib/format";
+import { MIN_SHIPPING_NAIRA } from "@/lib/fees";
 import { Card } from "@/components/Card";
 import { Button } from "@/components/Button";
 import { DispatchBadge, PaymentBadge } from "@/components/Badges";
@@ -34,6 +35,7 @@ export default function OrderDetailPage() {
   const [shipmentLink, setShipmentLink] = useState("");
   const [generating, setGenerating] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   // GafiaPay shipping (bank transfer) option — temporarily disabled. Setters
@@ -73,13 +75,24 @@ export default function OrderDetailPage() {
   async function handleGenerateLink(e: FormEvent) {
     e.preventDefault();
     if (!shippingAmount || !order) return;
+    if (Number(shippingAmount) < MIN_SHIPPING_NAIRA) {
+      setLinkError(`Shipping fee must be at least ₦${MIN_SHIPPING_NAIRA}.`);
+      return;
+    }
+    setLinkError(null);
     setGenerating(true);
-    // TODO: replace with real API calls in lib/api.ts (setShippingCost, generateShipmentLink)
-    const updated = await setShippingCost(order.id, Number(shippingAmount));
-    const { url } = await generateShipmentLink(order.id);
-    if (updated) setOrder(updated);
-    setShipmentLink(url);
-    setGenerating(false);
+    try {
+      const updated = await setShippingCost(order.id, Number(shippingAmount));
+      const { url } = await generateShipmentLink(order.id);
+      if (updated) setOrder(updated);
+      setShipmentLink(url);
+    } catch (err) {
+      setLinkError(
+        err instanceof Error ? err.message : "Could not create link.",
+      );
+    } finally {
+      setGenerating(false);
+    }
   }
 
   function handleCopyLink() {
@@ -218,13 +231,17 @@ export default function OrderDetailPage() {
               <input
                 id="ship-amount"
                 type="number"
-                min="0"
+                min={MIN_SHIPPING_NAIRA}
                 required
                 value={shippingAmount}
-                onChange={(e) => setShippingAmount(e.target.value)}
-                placeholder="e.g. 4500"
+                onChange={(e) => {
+                  setShippingAmount(e.target.value);
+                  if (linkError) setLinkError(null);
+                }}
+                placeholder={`e.g. 4500 (min ₦${MIN_SHIPPING_NAIRA})`}
                 className="w-full rounded-xl border border-border bg-white px-4 py-3 text-base text-ink focus:outline-none focus:ring-2 focus:ring-primary"
               />
+              {linkError && <p className="text-sm text-danger">{linkError}</p>}
             </div>
 
             {/* Option 1 — Paystack payment link */}
@@ -232,7 +249,9 @@ export default function OrderDetailPage() {
               <Button
                 type="submit"
                 fullWidth
-                disabled={generating || !shippingAmount}
+                disabled={
+                  generating || Number(shippingAmount) < MIN_SHIPPING_NAIRA
+                }
                 className="whitespace-nowrap"
               >
                 <Truck size={18} className="shrink-0" />

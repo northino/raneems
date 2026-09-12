@@ -8,7 +8,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { generateVirtualAccount } from "@/lib/gafiapay";
-import { computeGafiaFeeBreakdown } from "@/lib/fees";
+import { computeGafiaFeeBreakdown, MIN_SHIPPING_NAIRA } from "@/lib/fees";
 
 function validId(v: string | undefined): boolean {
   return !!v && /^\d{11}$/.test(v);
@@ -52,6 +52,12 @@ export async function POST(request: Request) {
     if (!amountNaira || amountNaira <= 0) {
       return NextResponse.json(
         { error: `No ${type} amount set on this order.` },
+        { status: 400 },
+      );
+    }
+    if (type === "shipping" && amountNaira < MIN_SHIPPING_NAIRA) {
+      return NextResponse.json(
+        { error: `Shipping fee must be at least ₦${MIN_SHIPPING_NAIRA}.` },
         { status: 400 },
       );
     }

@@ -13,6 +13,10 @@
 export const PLATFORM_FEE_FLAT_NAIRA = 150;
 export const PLATFORM_FEE_PERCENT = 0.085; // 8.5%
 
+// Minimum shipping fee. Below this the flat ₦150 + 8.5% commission would eat
+// most/all of the payment and leave the merchant nothing, so we reject it.
+export const MIN_SHIPPING_NAIRA = 500;
+
 export interface FeeBreakdown {
   /** What the customer pays (unchanged — the actual item/shipping amount). */
   totalNaira: number;
