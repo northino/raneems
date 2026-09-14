@@ -59,6 +59,23 @@ export async function POST(request: Request) {
       );
     }
 
+    // Contingency (option 4): a DVA is permanent per customer email, and the
+    // webhook matches an incoming transfer by account + amount. To avoid a
+    // stale/abandoned unpaid transfer catching a later payment, ensure this
+    // customer has only ONE open unpaid DVA order of this type at a time —
+    // remove their earlier unpaid DVA attempts (item: never paid & still
+    // awaiting item payment) before starting this one.
+    if (type === "item") {
+      await supabase
+        .from("orders")
+        .delete()
+        .eq("customer_email", order.customer_email)
+        .eq("item_provider", "paystack_dva")
+        .eq("item_paid", false)
+        .eq("dispatch_status", "awaiting_item_payment")
+        .neq("id", orderId);
+    }
+
     const rawSubaccount = process.env.PAYSTACK_SUBACCOUNT_CODE?.trim();
     const subaccount =
       rawSubaccount && rawSubaccount.startsWith("ACCT_")

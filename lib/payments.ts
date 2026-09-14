@@ -203,6 +203,11 @@ export async function applyDvaPayment(
 ): Promise<ApplyResult> {
   if (!params.accountNumber) return { orderId: null, applied: false };
 
+  // Prefer the NEWEST matching unpaid order: if the customer discarded an
+  // earlier order and created a new one (even a different product) with the
+  // same amount, the payment should apply to the one they actually intend to
+  // pay — the most recent. (The DVA route also cleans up stale unpaid item
+  // orders for this customer, so a collision here is rare.)
   const { data: itemMatch } = await supabase
     .from("orders")
     .select("id, item_paid, shipping_paid, item_amount, shipping_amount")
@@ -210,7 +215,7 @@ export async function applyDvaPayment(
     .eq("item_dva_account", params.accountNumber)
     .eq("item_paid", false)
     .eq("item_amount", Math.round(params.amountNaira))
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (itemMatch) {
@@ -224,7 +229,7 @@ export async function applyDvaPayment(
     .eq("shipping_dva_account", params.accountNumber)
     .eq("shipping_paid", false)
     .eq("shipping_amount", Math.round(params.amountNaira))
-    .order("created_at", { ascending: true })
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
   if (shipMatch) {

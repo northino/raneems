@@ -338,6 +338,8 @@ export default function PublicProductPage() {
             <span className="h-px flex-1 bg-border" />
           </div>
           */}
+          {/* Hosted-checkout (redirect) payment is temporarily disabled —
+              re-enable this submit button + the "or" divider to bring it back.
           <Button type="submit" fullWidth className="mt-1 text-lg py-4">
             Pay {formatNaira(total)}
           </Button>
@@ -346,14 +348,14 @@ export default function PublicProductPage() {
             or
             <span className="h-px flex-1 bg-border" />
           </div>
+          */}
           <Button
             type="button"
-            variant="secondary"
             fullWidth
-            className="text-lg py-4"
+            className="mt-1 text-lg py-4"
             onClick={handleBankTransfer}
           >
-            Pay with Bank Transfer
+            Pay {formatNaira(total)}
           </Button>
         </form>
       </div>

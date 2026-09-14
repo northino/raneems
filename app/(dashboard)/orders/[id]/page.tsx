@@ -39,10 +39,13 @@ export default function OrderDetailPage() {
   const [linkError, setLinkError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  // Shipping "pay with bank transfer" (Paystack DVA)
+  // Shipping "pay with bank transfer" (Paystack DVA) — temporarily disabled;
+  // kept for easy re-enabling (payment link is preferred for shipping).
+  /* eslint-disable @typescript-eslint/no-unused-vars */
   const [dvaAccount, setDvaAccount] = useState<GafiaAccount | null>(null);
   const [dvaBusy, setDvaBusy] = useState(false);
   const [dvaError, setDvaError] = useState<string | null>(null);
+  /* eslint-enable @typescript-eslint/no-unused-vars */
 
   // GafiaPay shipping (bank transfer) option — temporarily disabled. Setters
   // are used by the hidden UI/handlers below; kept for easy re-enabling.
@@ -108,6 +111,7 @@ export default function OrderDetailPage() {
     });
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   async function handleGenerateDvaShipping() {
     if (!shippingAmount || !order) return;
     if (Number(shippingAmount) < MIN_SHIPPING_NAIRA) {
@@ -130,6 +134,7 @@ export default function OrderDetailPage() {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   function handleSendDvaWhatsApp() {
     if (!order || !dvaAccount) return;
     const message = `Hi ${order.customerName.split(" ")[0]}, to pay shipping for order ${order.orderReference}, transfer ${formatNaira(
@@ -317,7 +322,9 @@ export default function OrderDetailPage() {
               </div>
             )}
 
-            {/* Option 2 — Paystack bank transfer (Dedicated Virtual Account) */}
+            {/* Option 2 — Paystack bank transfer (DVA). Temporarily disabled
+                for shipping: the payment link above is easier to share/copy.
+                Handlers/state kept below for easy re-enabling.
             <div className="flex items-center gap-3 text-xs text-ink-soft">
               <span className="h-px flex-1 bg-border" />
               or bank transfer
@@ -354,6 +361,7 @@ export default function OrderDetailPage() {
                 </button>
               </div>
             )}
+            */}
 
             {/* Option 3 — GafiaPay bank transfer. Temporarily disabled; the
                 handlers/state are kept below for easy re-enabling.
