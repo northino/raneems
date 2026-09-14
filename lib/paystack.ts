@@ -137,3 +137,165 @@ export function verifyWebhookSignature(
   const b = Buffer.from(signature);
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
+
+// ---------------------------------------------------------------------------
+// Dedicated Virtual Accounts (DVA) — "pay with bank transfer" on-page flow.
+// ---------------------------------------------------------------------------
+// The customer is shown a dedicated bank account number and transfers into it;
+// Paystack sends a charge.success webhook (channel "dedicated_nuban") when the
+// money lands. Our business is e-commerce (optional compliance), so no BVN /
+// customer validation is required — only email/name/phone.
+
+async function paystackGet<T>(path: string): Promise<T> {
+  const res = await fetch(`${PAYSTACK_BASE}${path}`, {
+    headers: { Authorization: `Bearer ${secretKey()}` },
+    cache: "no-store",
+  });
+  const json = await res.json();
+  if (!res.ok || !json.status) {
+    throw new Error(json.message || "Paystack request failed");
+  }
+  return json as T;
+}
+
+async function paystackPost<T>(
+  path: string,
+  body: Record<string, unknown>,
+): Promise<T> {
+  const res = await fetch(`${PAYSTACK_BASE}${path}`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${secretKey()}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+    cache: "no-store",
+  });
+  const json = await res.json();
+  if (!res.ok || !json.status) {
+    throw new Error(json.message || "Paystack request failed");
+  }
+  return json as T;
+}
+
+export interface DedicatedAccount {
+  accountNumber: string;
+  accountName: string;
+  bankName: string;
+  customerCode: string;
+}
+
+/**
+ * Ensure a Paystack customer exists for this email and return the customer_code.
+ * Creating a customer with an existing email returns the existing record.
+ */
+export async function ensureCustomer(input: {
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+}): Promise<string> {
+  const json = await paystackPost<{ data: { customer_code: string } }>(
+    "/customer",
+    {
+      email: input.email,
+      first_name: input.firstName,
+      last_name: input.lastName,
+      phone: input.phone,
+    },
+  );
+  return json.data.customer_code;
+}
+
+/**
+ * Request a dedicated virtual account for a customer (single-step assign).
+ * Optionally attaches a subaccount so incoming transfers are split. This is
+ * ASYNCHRONOUS — Paystack returns "assignment in progress" and creates the
+ * account shortly after; use pollDedicatedAccount() to retrieve it.
+ */
+export async function assignDedicatedAccount(input: {
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  preferredBank?: string; // "wema-bank" (live) or "test-bank" (test mode)
+  subaccount?: string; // ACCT_... to split incoming transfers
+}): Promise<void> {
+  const body: Record<string, unknown> = {
+    email: input.email,
+    first_name: input.firstName,
+    last_name: input.lastName,
+    phone: input.phone,
+    preferred_bank: input.preferredBank || "wema-bank",
+    country: "NG",
+  };
+  if (input.subaccount) body.subaccount = input.subaccount;
+  await paystackPost("/dedicated_account/assign", body);
+}
+
+interface FetchCustomerResponse {
+  data: {
+    customer_code: string;
+    dedicated_account?: {
+      account_number: string;
+      account_name: string;
+      bank?: { name?: string };
+    } | null;
+  };
+}
+
+/**
+ * Fetch a customer's currently-assigned dedicated account, or null if the
+ * async assignment hasn't completed yet.
+ */
+export async function fetchCustomerDedicatedAccount(
+  customerCode: string,
+): Promise<DedicatedAccount | null> {
+  const json = await paystackGet<FetchCustomerResponse>(
+    `/customer/${encodeURIComponent(customerCode)}`,
+  );
+  const dva = json.data.dedicated_account;
+  if (!dva?.account_number) return null;
+  return {
+    accountNumber: dva.account_number,
+    accountName: dva.account_name,
+    bankName: dva.bank?.name || "Bank",
+    customerCode: json.data.customer_code,
+  };
+}
+
+/**
+ * Create (if needed) and retrieve a dedicated account for a customer. Handles
+ * the async assignment by polling Fetch Customer a few times. If the customer
+ * already has a DVA, it's returned immediately.
+ */
+export async function getOrCreateDedicatedAccount(input: {
+  email: string;
+  firstName: string;
+  lastName: string;
+  phone?: string;
+  subaccount?: string;
+}): Promise<DedicatedAccount> {
+  const testMode = secretKey().startsWith("sk_test");
+  const customerCode = await ensureCustomer(input);
+
+  // If a DVA already exists for this customer, reuse it.
+  const existing = await fetchCustomerDedicatedAccount(customerCode);
+  if (existing) return existing;
+
+  // Otherwise request one and poll until it's assigned.
+  await assignDedicatedAccount({
+    ...input,
+    preferredBank: testMode ? "test-bank" : "wema-bank",
+  });
+
+  for (let attempt = 0; attempt < 6; attempt++) {
+    await new Promise((r) => setTimeout(r, 1500));
+    const dva = await fetchCustomerDedicatedAccount(customerCode);
+    if (dva) return dva;
+  }
+
+  throw new Error(
+    "Your payment account is being set up. Please try again in a moment.",
+  );
+}

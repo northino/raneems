@@ -7,6 +7,7 @@ import {
   getOrder,
   getProductBySlug,
   initiateItemPayment,
+  initiateItemPaymentDva,
   initiateItemPaymentGafia,
   submitOrder,
   type GafiaAccount,
@@ -125,6 +126,32 @@ export default function PublicProductPage() {
     } catch (err) {
       setPaymentError(
         err instanceof Error ? err.message : "Could not start GafiaPay payment.",
+      );
+      setStage("form");
+    }
+  }
+
+  // Pay with bank transfer via a Paystack Dedicated Virtual Account. Stays on
+  // this page: shows an account number and polls until the transfer confirms.
+  async function handleBankTransfer() {
+    if (!product) return;
+    setPaymentError(null);
+    setStage("redirecting");
+    try {
+      const order = await createOrder();
+      const account = await initiateItemPaymentDva(order.id);
+      setGafiaAccount(account);
+      setStage("gafia-waiting");
+      pollRef.current = setInterval(async () => {
+        const fresh = await getOrder(order.id);
+        if (fresh?.itemPayment.paid) {
+          if (pollRef.current) clearInterval(pollRef.current);
+          setGafiaPaid(true);
+        }
+      }, 5000);
+    } catch (err) {
+      setPaymentError(
+        err instanceof Error ? err.message : "Could not start bank transfer.",
       );
       setStage("form");
     }
@@ -313,6 +340,20 @@ export default function PublicProductPage() {
           */}
           <Button type="submit" fullWidth className="mt-1 text-lg py-4">
             Pay {formatNaira(total)}
+          </Button>
+          <div className="flex items-center gap-3 text-xs text-ink-soft">
+            <span className="h-px flex-1 bg-border" />
+            or
+            <span className="h-px flex-1 bg-border" />
+          </div>
+          <Button
+            type="button"
+            variant="secondary"
+            fullWidth
+            className="text-lg py-4"
+            onClick={handleBankTransfer}
+          >
+            Pay with Bank Transfer
           </Button>
         </form>
       </div>
