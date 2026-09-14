@@ -60,7 +60,7 @@ export async function POST(request: Request) {
     const callbackUrl = `${siteUrl}/api/payments/callback`;
 
     // Split: the customer pays `amountNaira`; the platform keeps a commission
-    // (₦150 + 8.5%), the merchant subaccount gets the rest. If no subaccount is
+    // (₦150 + 3%), the merchant subaccount gets the rest. If no subaccount is
     // configured, the payment isn't split (all goes to the main account).
     const fees = computeFeeBreakdown(amountNaira);
     const rawSubaccount = process.env.PAYSTACK_SUBACCOUNT_CODE?.trim();

@@ -2,7 +2,7 @@
 //
 // The customer pays the ACTUAL amount (item price or shipping cost) — no
 // visible surcharge. Behind the scenes the payment is split:
-//   • Platform (main Paystack account) keeps a commission of ₦150 + 8.5%.
+//   • Platform (main Paystack account) keeps a commission of ₦150 + 3%.
 //   • The merchant subaccount (Raneems) keeps the remainder.
 //   • Paystack's own transaction fee is borne by the main account (us), so it
 //     comes out of the platform commission — the merchant's share is unaffected.
@@ -11,23 +11,23 @@
 // the Paystack boundary, where we multiply by 100).
 
 export const PLATFORM_FEE_FLAT_NAIRA = 150;
-export const PLATFORM_FEE_PERCENT = 0.085; // 8.5%
+export const PLATFORM_FEE_PERCENT = 0.03; // 3%
 
-// Minimum shipping fee. Below this the flat ₦150 + 8.5% commission would eat
+// Minimum shipping fee. Below this the flat ₦150 + 3% commission would eat
 // most/all of the payment and leave the merchant nothing, so we reject it.
 export const MIN_SHIPPING_NAIRA = 500;
 
 export interface FeeBreakdown {
   /** What the customer pays (unchanged — the actual item/shipping amount). */
   totalNaira: number;
-  /** Platform commission kept by the main account (₦150 + 8.5%, nearest ₦). */
+  /** Platform commission kept by the main account (₦150 + 3%, nearest ₦). */
   platformCommissionNaira: number;
   /** What the merchant subaccount receives (total − commission). */
   merchantAmountNaira: number;
 }
 
 /**
- * Platform commission for a given transaction amount: ₦150 + 8.5%, rounded to
+ * Platform commission for a given transaction amount: ₦150 + 3%, rounded to
  * the nearest whole Naira. Never exceeds the amount itself (guards tiny
  * amounts, though those shouldn't occur in practice).
  */
