@@ -191,6 +191,49 @@ export async function applyGafiaPayment(
   return { orderId: null, applied: false };
 }
 
+/**
+ * Apply a confirmed Paystack Dedicated Virtual Account (DVA) transfer. Paystack
+ * doesn't tie a DVA transfer to our order reference, so we correlate by the
+ * receiver account number + matching unpaid amount (same approach as GafiaPay).
+ * Idempotent.
+ */
+export async function applyDvaPayment(
+  supabase: SupabaseClient,
+  params: { accountNumber?: string | null; amountNaira: number },
+): Promise<ApplyResult> {
+  if (!params.accountNumber) return { orderId: null, applied: false };
+
+  const { data: itemMatch } = await supabase
+    .from("orders")
+    .select("id, item_paid, shipping_paid, item_amount, shipping_amount")
+    .eq("item_provider", "paystack_dva")
+    .eq("item_dva_account", params.accountNumber)
+    .eq("item_paid", false)
+    .eq("item_amount", Math.round(params.amountNaira))
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (itemMatch) {
+    return applyToOrder(supabase, itemMatch as OrderRow, "item");
+  }
+
+  const { data: shipMatch } = await supabase
+    .from("orders")
+    .select("id, item_paid, shipping_paid, item_amount, shipping_amount")
+    .eq("shipping_provider", "paystack_dva")
+    .eq("shipping_dva_account", params.accountNumber)
+    .eq("shipping_paid", false)
+    .eq("shipping_amount", Math.round(params.amountNaira))
+    .order("created_at", { ascending: true })
+    .limit(1)
+    .maybeSingle();
+  if (shipMatch) {
+    return applyToOrder(supabase, shipMatch as OrderRow, "shipping");
+  }
+
+  return { orderId: null, applied: false };
+}
+
 /** Parse the orderId + payment type out of a Paystack metadata object. */
 export function hintsFromMetadata(metadata: unknown): PaymentHints {
   if (!metadata || typeof metadata !== "object") return {};

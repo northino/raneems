@@ -81,9 +81,12 @@ create table if not exists public.orders (
   item_payment_reference   text,  -- provider transaction reference / orderNo (item)
   item_platform_fee     integer, -- platform commission on the item payment (₦)
   item_merchant_amount  integer, -- merchant subaccount share of the item payment (₦)
-  item_provider         text,    -- 'paystack' | 'gafiapay' (item payment)
+  item_provider         text,    -- 'paystack' | 'paystack_dva' | 'gafiapay' (item)
   item_gafia_account    text,    -- GafiaPay virtual account number (item)
   item_gafia_bank       text,    -- GafiaPay virtual account bank name (item)
+  item_dva_account      text,    -- Paystack DVA account number (item)
+  item_dva_bank         text,    -- Paystack DVA bank name (item)
+  paystack_customer_code text,   -- Paystack customer_code (for DVA reuse)
 
   shipping_paid         boolean not null default false,
   shipping_amount       integer,
@@ -91,9 +94,11 @@ create table if not exists public.orders (
   shipping_payment_reference text, -- provider transaction reference / orderNo (shipping)
   shipping_platform_fee integer, -- platform commission on the shipping payment (₦)
   shipping_merchant_amount integer, -- merchant subaccount share of the shipping payment (₦)
-  shipping_provider     text,    -- 'paystack' | 'gafiapay' (shipping payment)
+  shipping_provider     text,    -- 'paystack' | 'paystack_dva' | 'gafiapay' (shipping)
   shipping_gafia_account text,   -- GafiaPay virtual account number (shipping)
   shipping_gafia_bank   text,    -- GafiaPay virtual account bank name (shipping)
+  shipping_dva_account  text,    -- Paystack DVA account number (shipping)
+  shipping_dva_bank     text,    -- Paystack DVA bank name (shipping)
 
   dispatch_status       dispatch_status not null default 'awaiting_item_payment',
   created_at            timestamptz not null default now()
@@ -117,6 +122,11 @@ alter table public.orders add column if not exists item_gafia_bank text;
 alter table public.orders add column if not exists shipping_provider text;
 alter table public.orders add column if not exists shipping_gafia_account text;
 alter table public.orders add column if not exists shipping_gafia_bank text;
+alter table public.orders add column if not exists item_dva_account text;
+alter table public.orders add column if not exists item_dva_bank text;
+alter table public.orders add column if not exists shipping_dva_account text;
+alter table public.orders add column if not exists shipping_dva_bank text;
+alter table public.orders add column if not exists paystack_customer_code text;
 
 -- Order reference sequence --------------------------------------------------
 -- Mirrors the mock "RNM-1001, RNM-1002…" scheme with a DB sequence so

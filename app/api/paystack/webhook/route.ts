@@ -5,13 +5,20 @@
 // We verify against the raw string — never against re-serialized JSON — then
 // mark the matching order paid. Idempotent: safe if Paystack retries.
 //
-// Configure this URL in the Paystack dashboard (Settings → API Keys &
-// Webhooks). It must be publicly reachable, so in local dev tunnel it with a
-// tool like ngrok/cloudflared and point Paystack at the tunnel URL.
+// Handles two kinds of charge.success:
+//   • Hosted checkout (redirect) — correlated by our stored transaction
+//     reference (+ metadata orderId fallback).
+//   • Dedicated Virtual Account transfer — channel "dedicated_nuban"; there's
+//     no reference we set, so we correlate by the receiver account number +
+//     amount.
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { verifyWebhookSignature } from "@/lib/paystack";
-import { applyPaymentByReference, hintsFromMetadata } from "@/lib/payments";
+import {
+  applyDvaPayment,
+  applyPaymentByReference,
+  hintsFromMetadata,
+} from "@/lib/payments";
 
 export async function POST(request: Request) {
   const rawBody = await request.text();
@@ -23,7 +30,17 @@ export async function POST(request: Request) {
 
   let event: {
     event?: string;
-    data?: { reference?: string; status?: string; metadata?: unknown };
+    data?: {
+      reference?: string;
+      status?: string;
+      amount?: number; // kobo
+      channel?: string;
+      metadata?: unknown;
+      authorization?: {
+        channel?: string;
+        receiver_bank_account_number?: string;
+      };
+    };
   };
   try {
     event = JSON.parse(rawBody);
@@ -31,23 +48,37 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  // Only act on successful charges. Acknowledge everything else with 200 so
-  // Paystack doesn't retry events we intentionally ignore.
-  if (event.event === "charge.success" && event.data?.reference) {
-    if (event.data.status === "success" || !event.data.status) {
-      try {
-        const supabase = createAdminClient();
-        // Pass metadata hints so we can still resolve the order by id if the
-        // stored reference was overwritten (e.g. a regenerated shipping link).
+  const data = event.data;
+  const isSuccess =
+    event.event === "charge.success" &&
+    (data?.status === "success" || !data?.status);
+
+  if (isSuccess && data) {
+    try {
+      const supabase = createAdminClient();
+      const isDva =
+        data.channel === "dedicated_nuban" ||
+        data.authorization?.channel === "dedicated_nuban";
+
+      if (isDva) {
+        // Bank transfer into a dedicated virtual account: match by the
+        // receiver account number + the amount transferred (kobo → Naira).
+        await applyDvaPayment(supabase, {
+          accountNumber:
+            data.authorization?.receiver_bank_account_number ?? null,
+          amountNaira: (Number(data.amount) || 0) / 100,
+        });
+      } else if (data.reference) {
+        // Hosted checkout: correlate by our stored reference (+ metadata).
         await applyPaymentByReference(
           supabase,
-          event.data.reference,
-          hintsFromMetadata(event.data.metadata),
+          data.reference,
+          hintsFromMetadata(data.metadata),
         );
-      } catch {
-        // Return 500 so Paystack retries later if our DB write failed.
-        return NextResponse.json({ error: "Processing failed" }, { status: 500 });
       }
+    } catch {
+      // Return 500 so Paystack retries later if our DB write failed.
+      return NextResponse.json({ error: "Processing failed" }, { status: 500 });
     }
   }
 

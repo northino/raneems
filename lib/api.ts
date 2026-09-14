@@ -572,6 +572,44 @@ export interface GafiaAccount {
   amount: number;
 }
 
+/** Same shape as GafiaAccount — bank account details to display for a transfer. */
+export type TransferAccount = GafiaAccount;
+
+/**
+ * Starts a Paystack "pay with bank transfer" (Dedicated Virtual Account) for an
+ * item payment: returns a bank account to display on the page. Payment is
+ * confirmed asynchronously by the Paystack charge.success webhook.
+ */
+export async function initiateItemPaymentDva(
+  orderId: string,
+): Promise<TransferAccount> {
+  const res = await fetch("/api/payments/dva", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderId, type: "item" }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "Could not start bank transfer.");
+  return json as TransferAccount;
+}
+
+/**
+ * Generates a Paystack DVA for the shipping cost. The owner sends the transfer
+ * details to the customer over WhatsApp. Call setShippingCost() first.
+ */
+export async function generateShipmentDva(
+  orderId: string,
+): Promise<TransferAccount> {
+  const res = await fetch("/api/payments/dva", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ orderId, type: "shipping" }),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || "Could not create bank transfer.");
+  return json as TransferAccount;
+}
+
 /**
  * Starts a GafiaPay item payment: generates a virtual account for the customer
  * to transfer into. Requires the customer's BVN or NIN. Payment is confirmed

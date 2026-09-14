@@ -12,6 +12,7 @@ import {
   Truck,
 } from "lucide-react";
 import {
+  generateShipmentDva,
   generateShipmentGafia,
   generateShipmentLink,
   getOrder,
@@ -37,6 +38,11 @@ export default function OrderDetailPage() {
   const [linkCopied, setLinkCopied] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Shipping "pay with bank transfer" (Paystack DVA)
+  const [dvaAccount, setDvaAccount] = useState<GafiaAccount | null>(null);
+  const [dvaBusy, setDvaBusy] = useState(false);
+  const [dvaError, setDvaError] = useState<string | null>(null);
 
   // GafiaPay shipping (bank transfer) option — temporarily disabled. Setters
   // are used by the hidden UI/handlers below; kept for easy re-enabling.
@@ -100,6 +106,36 @@ export default function OrderDetailPage() {
       setLinkCopied(true);
       setTimeout(() => setLinkCopied(false), 1800);
     });
+  }
+
+  async function handleGenerateDvaShipping() {
+    if (!shippingAmount || !order) return;
+    if (Number(shippingAmount) < MIN_SHIPPING_NAIRA) {
+      setDvaError(`Shipping fee must be at least ₦${MIN_SHIPPING_NAIRA}.`);
+      return;
+    }
+    setDvaError(null);
+    setDvaBusy(true);
+    try {
+      const updated = await setShippingCost(order.id, Number(shippingAmount));
+      const account = await generateShipmentDva(order.id);
+      if (updated) setOrder(updated);
+      setDvaAccount(account);
+    } catch (err) {
+      setDvaError(
+        err instanceof Error ? err.message : "Could not create transfer.",
+      );
+    } finally {
+      setDvaBusy(false);
+    }
+  }
+
+  function handleSendDvaWhatsApp() {
+    if (!order || !dvaAccount) return;
+    const message = `Hi ${order.customerName.split(" ")[0]}, to pay shipping for order ${order.orderReference}, transfer ${formatNaira(
+      dvaAccount.amount,
+    )} to:\nBank: ${dvaAccount.bankName}\nAccount: ${dvaAccount.accountNumber}\nName: ${dvaAccount.accountName}`;
+    window.open(buildWhatsAppLink(order.customerPhone, message), "_blank");
   }
 
   function handleSendWhatsApp() {
@@ -281,7 +317,45 @@ export default function OrderDetailPage() {
               </div>
             )}
 
-            {/* Option 2 — GafiaPay bank transfer. Temporarily disabled; the
+            {/* Option 2 — Paystack bank transfer (Dedicated Virtual Account) */}
+            <div className="flex items-center gap-3 text-xs text-ink-soft">
+              <span className="h-px flex-1 bg-border" />
+              or bank transfer
+              <span className="h-px flex-1 bg-border" />
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              fullWidth
+              disabled={
+                dvaBusy || Number(shippingAmount) < MIN_SHIPPING_NAIRA
+              }
+              onClick={handleGenerateDvaShipping}
+              className="whitespace-nowrap"
+            >
+              <Truck size={18} className="shrink-0" />
+              {dvaBusy ? "Generating…" : "Generate Bank Transfer"}
+            </Button>
+
+            {dvaError && <p className="text-sm text-danger">{dvaError}</p>}
+
+            {dvaAccount && (
+              <div className="flex flex-col gap-2 bg-cream-dark rounded-xl p-3">
+                <Row label="Bank" value={dvaAccount.bankName} />
+                <Row label="Account" value={dvaAccount.accountNumber} />
+                <Row label="Name" value={dvaAccount.accountName} />
+                <Row label="Amount" value={formatNaira(dvaAccount.amount)} />
+                <button
+                  onClick={handleSendDvaWhatsApp}
+                  className="mt-1 inline-flex items-center justify-center gap-1.5 rounded-lg bg-[#25D366] text-white px-3 py-2.5 text-sm font-semibold hover:opacity-90"
+                >
+                  <MessageCircle size={16} />
+                  Send transfer details via WhatsApp
+                </button>
+              </div>
+            )}
+
+            {/* Option 3 — GafiaPay bank transfer. Temporarily disabled; the
                 handlers/state are kept below for easy re-enabling.
             <div className="flex items-center gap-3 text-xs text-ink-soft">
               <span className="h-px flex-1 bg-border" />
