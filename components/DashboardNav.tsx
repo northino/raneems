@@ -8,6 +8,7 @@ import {
   ClipboardList,
   Truck,
   Users,
+  UserCircle,
   LogOut,
 } from "lucide-react";
 import { logout } from "@/lib/api";
@@ -61,13 +62,28 @@ export function DashboardNav() {
               </Link>
             ))}
           </nav>
-          <button
-            onClick={handleLogout}
-            className="hidden md:flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-ink-soft hover:bg-cream-dark"
-          >
-            <LogOut size={18} />
-            Log out
-          </button>
+          <div className="flex items-center gap-1">
+            {/* Account (change password, etc.) — visible on all sizes. */}
+            <Link
+              href="/account"
+              aria-label="Account"
+              className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
+                isActive(pathname, "/account")
+                  ? "bg-primary-light text-primary-dark"
+                  : "text-ink-soft hover:bg-cream-dark"
+              }`}
+            >
+              <UserCircle size={18} />
+              <span className="hidden md:inline">Account</span>
+            </Link>
+            <button
+              onClick={handleLogout}
+              className="hidden md:flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-ink-soft hover:bg-cream-dark"
+            >
+              <LogOut size={18} />
+              Log out
+            </button>
+          </div>
         </div>
       </header>
 

@@ -166,6 +166,45 @@ export async function getCurrentUser() {
   return data.user;
 }
 
+/**
+ * Change the signed-in user's password. Re-verifies the current password first
+ * (signInWithPassword) so an unattended logged-in session can't silently change
+ * it, then updates via Supabase auth.
+ */
+export async function changePassword(
+  currentPassword: string,
+  newPassword: string,
+): Promise<{ ok: boolean; message?: string }> {
+  if (!currentPassword || !newPassword) {
+    return { ok: false, message: "Both current and new password are required." };
+  }
+  if (newPassword.length < 8) {
+    return { ok: false, message: "New password must be at least 8 characters." };
+  }
+
+  const {
+    data: { user },
+  } = await db().auth.getUser();
+  if (!user?.email) {
+    return { ok: false, message: "You must be signed in." };
+  }
+
+  // Verify the current password by re-authenticating.
+  const { error: verifyError } = await db().auth.signInWithPassword({
+    email: user.email,
+    password: currentPassword,
+  });
+  if (verifyError) {
+    return { ok: false, message: "Current password is incorrect." };
+  }
+
+  const { error } = await db().auth.updateUser({ password: newPassword });
+  if (error) {
+    return { ok: false, message: error.message };
+  }
+  return { ok: true };
+}
+
 // ---------------------------------------------------------------------------
 // Batches
 // ---------------------------------------------------------------------------
